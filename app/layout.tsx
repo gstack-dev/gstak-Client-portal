@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
 import { Plus_Jakarta_Sans, Inter } from "next/font/google";
 import "@/app/globals.css";
+// 1. Import your new ThemeProvider
+import { ThemeProvider } from "@/components/ThemeProvider";
 
-// Initialize the premium geometric font for headings
 const plusJakartaSans = Plus_Jakarta_Sans({
   subsets: ["latin"],
   variable: "--font-plus-jakarta-sans",
   display: "swap",
 });
 
-// Initialize the technical font for body text
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
@@ -27,9 +27,21 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    // 2. Add suppressHydrationWarning here
+    <html lang="en" className="scroll-smooth" suppressHydrationWarning>
+      <head />
       <body className={`${plusJakartaSans.variable} ${inter.variable} antialiased selection:bg-primary-shadcn selection:text-primary-foreground`}>
-        {children}
+        
+        {/* 3. Wrap your app */}
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+        </ThemeProvider>
+
       </body>
     </html>
   );

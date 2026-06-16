@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Suspense } from "react";
 import { Mail, Lock } from "lucide-react";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -19,7 +20,7 @@ import {
 import { siteConfig } from "@/lib/config/site";
 import GoogleSignInButton from "@/components/web/GoogleSingInButton";
 import { useRouter, useSearchParams } from "next/navigation";
-import { signIn, getSession } from "next-auth/react";
+import { signIn } from "next-auth/react";
 
 const loginSchema = z.object({
     email: z.string().email({
@@ -33,7 +34,7 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>;
 
-export default function LoginPage() {
+function LoginForm() {
     const searchParams = useSearchParams();
     const urlError = searchParams.get("error");
     const router = useRouter();
@@ -60,15 +61,7 @@ export default function LoginPage() {
                 message: "Invalid email or password. Please try again.",
             });
         } else {
-            const session = await getSession();
-
-            if (session?.user?.role === "admin") {
-                router.push("/admin"); 
-            } else {
-                router.push("/dashboard"); 
-            }
-            
-            router.refresh();
+            router.push("/dashboard");
         }
     }
 
@@ -243,5 +236,13 @@ export default function LoginPage() {
             
         </main>
         </div>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense fallback={null}>
+            <LoginForm />
+        </Suspense>
     );
 }

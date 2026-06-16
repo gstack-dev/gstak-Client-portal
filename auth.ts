@@ -69,19 +69,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return true; // Credentials provider returns true by default
         },
 
-        // 2. Attach the role to the JWT Token
-        async jwt({ token, user, trigger, session }) {
-        // 'user' is only passed in the first time the token is created
+        // 2. Attach the role + basic info to the JWT Token
+        // NOTE: image is NOT stored in JWT — base64 data URLs are too large for cookies.
+        // The client fetches the image separately via getProfile() server action.
+        async jwt({ token, user }) {
+        // 'user' is only passed in on sign-in; on subsequent calls it's undefined
         if (user) {
-            // If they logged in with credentials, user.role is already there from 'authorize'
-            if ('role' in user) {
-            token.role = user.role;
-            } else {
-            // If they logged in with Google, fetch their role from the DB
             await connectMongoDB();
             const dbUser = await User.findOne({ email: user.email });
             token.role = dbUser?.role || "client";
-            }
+            token.name = dbUser?.name;
+            token.email = dbUser?.email;
+
             const isRememberMe = (user as any).isRememberMe;
             if (isRememberMe === false) { 
                 // token.exp is in seconds since epoch
@@ -95,6 +94,8 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         async session({ session, token }) {
         if (token?.role && session.user) {
             session.user.role = token.role as string;
+            session.user.name = token.name as string;
+            session.user.email = token.email as string;
         }   
         return session;
         },
