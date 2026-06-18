@@ -256,7 +256,7 @@ export default function DashboardFilesPage() {
                       </div>
                       <div className="flex items-center gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
                         <a
-                          href={f.url}
+                          href={`${f.url}?download=1`}
                           download={f.originalName}
                         >
                           <Button

@@ -160,7 +160,7 @@ export async function getProjectFiles(projectId: string): Promise<FileItem[]> {
     originalName: d.originalName as string,
     size: d.size as number,
     mimeType: d.mimeType as string,
-    url: (d.fileName as string) || "",
+    url: `/api/files/${String(d._id)}`,
     projectId,
     projectTitle,
     uploadedBy: String(d.uploadedBy),
@@ -207,7 +207,7 @@ export async function getClientFiles(): Promise<FileItem[]> {
     originalName: d.originalName as string,
     size: d.size as number,
     mimeType: d.mimeType as string,
-    url: (d.fileName as string) || "",
+    url: `/api/files/${String(d._id)}`,
     projectId: String(d.projectId),
     projectTitle: projectTitles[String(d.projectId)] || "Untitled",
     uploadedBy: String(d.uploadedBy),
@@ -263,7 +263,7 @@ export async function getAdminFilesGrouped(): Promise<AdminFileGroup[]> {
     originalName: d.originalName as string,
     size: d.size as number,
     mimeType: d.mimeType as string,
-    url: (d.fileName as string) || "",
+    url: `/api/files/${String(d._id)}`,
     projectId: String(d.projectId),
     uploadedBy: String(d.uploadedBy),
     uploaderName: userMap[String(d.uploadedBy)] || "Unknown",
@@ -336,7 +336,7 @@ export async function getFileUrl(fileId: string) {
   const fileDoc = await FileModel.findById(fileId).lean();
   if (!fileDoc) return { error: "File not found" };
 
-  return { url: fileDoc.fileName as string, name: fileDoc.originalName };
+  return { url: `/api/files/${fileId}`, name: fileDoc.originalName };
 }
 
 // ── Notifications ──────────────────────────────────────

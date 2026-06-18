@@ -375,7 +375,7 @@ export default function AdminFilesPage() {
                                   </div>
                                   <div className="flex items-center gap-1 opacity-0 group/file-hover:opacity-100 transition-opacity">
                                     <a
-                                      href={f.url}
+                                      href={`${f.url}?download=1`}
                                       download={f.originalName}
                                     >
                                       <Button
