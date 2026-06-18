@@ -1,8 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import fs from "fs";
-import path from "path";
+import { put, del } from "@vercel/blob";
 import { auth } from "@/auth";
 import { connectMongoDB } from "@/lib/mongodb";
 import FileModel from "@/models/File";
@@ -11,14 +10,6 @@ import ProjectModel from "@/models/Project";
 import User from "@/models/User";
 import { sendFileUploadEmail } from "@/lib/email";
 import type { FileItem, Notification } from "@/types";
-
-const uploadDir = path.join(process.cwd(), "public", "uploads");
-
-function ensureUploadDir() {
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-  }
-}
 
 async function getAdminId(): Promise<string | null> {
   const admin = await User.findOne({ role: "admin" }).lean();
@@ -36,22 +27,20 @@ export async function uploadFile(formData: FormData) {
 
   if (!file || !projectId) return { error: "Missing file or projectId" };
   if (file.size === 0) return { error: "File is empty" };
+  if (!/^[0-9a-fA-F]{24}$/.test(projectId)) return { error: "Invalid project ID" };
 
   await connectMongoDB();
 
   const project = await ProjectModel.findById(projectId).lean();
   if (!project) return { error: "Project not found" };
 
-  ensureUploadDir();
-
-  const uniqueName = `${Date.now()}_${file.name}`;
   const buffer = Buffer.from(await file.arrayBuffer());
-  fs.writeFileSync(path.join(uploadDir, uniqueName), buffer);
+  const blob = await put(`${Date.now()}_${file.name}`, buffer, { access: "public" });
 
   const role = session.user.role === "admin" ? "admin" : "user";
 
   const fileDoc = await FileModel.create({
-    fileName: uniqueName,
+    fileName: blob.url,
     originalName: file.name,
     size: file.size,
     mimeType: file.type,
@@ -145,6 +134,8 @@ export async function getProjectFiles(projectId: string): Promise<FileItem[]> {
   const session = await auth();
   if (!session?.user?.id) return [];
 
+  if (!/^[0-9a-fA-F]{24}$/.test(projectId)) return [];
+
   await connectMongoDB();
 
   const docs = await FileModel.find({ projectId })
@@ -169,7 +160,7 @@ export async function getProjectFiles(projectId: string): Promise<FileItem[]> {
     originalName: d.originalName as string,
     size: d.size as number,
     mimeType: d.mimeType as string,
-    url: `/uploads/${d.fileName}`,
+    url: (d.fileName as string) || "",
     projectId,
     projectTitle,
     uploadedBy: String(d.uploadedBy),
@@ -216,7 +207,7 @@ export async function getClientFiles(): Promise<FileItem[]> {
     originalName: d.originalName as string,
     size: d.size as number,
     mimeType: d.mimeType as string,
-    url: `/uploads/${d.fileName}`,
+    url: (d.fileName as string) || "",
     projectId: String(d.projectId),
     projectTitle: projectTitles[String(d.projectId)] || "Untitled",
     uploadedBy: String(d.uploadedBy),
@@ -272,7 +263,7 @@ export async function getAdminFilesGrouped(): Promise<AdminFileGroup[]> {
     originalName: d.originalName as string,
     size: d.size as number,
     mimeType: d.mimeType as string,
-    url: `/uploads/${d.fileName}`,
+    url: (d.fileName as string) || "",
     projectId: String(d.projectId),
     uploadedBy: String(d.uploadedBy),
     uploaderName: userMap[String(d.uploadedBy)] || "Unknown",
@@ -322,10 +313,7 @@ export async function deleteFile(fileId: string) {
     return { error: "You can only delete files you uploaded" };
   }
 
-  const filePath = path.join(uploadDir, fileDoc.fileName as string);
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
-  }
+  await del(fileDoc.fileName as string);
 
   await FileModel.findByIdAndDelete(fileId);
 
@@ -348,7 +336,7 @@ export async function getFileUrl(fileId: string) {
   const fileDoc = await FileModel.findById(fileId).lean();
   if (!fileDoc) return { error: "File not found" };
 
-  return { url: `/uploads/${fileDoc.fileName}`, name: fileDoc.originalName };
+  return { url: fileDoc.fileName as string, name: fileDoc.originalName };
 }
 
 // ── Notifications ──────────────────────────────────────

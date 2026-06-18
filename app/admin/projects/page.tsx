@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Search, ChevronDown, ChevronRight, Plus, Pencil, Trash2, X, Save } from "lucide-react";
+import { Search, ChevronDown, ChevronRight, Plus, Pencil, Trash2, X, Save, ChevronUp } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { getClients, addProject, updateProject, deleteProject } from "@/app/actions/client";
 import type { Client, ClientProject } from "@/types";
 import type { ProjectFormValues } from "@/schema/project";
@@ -64,6 +66,27 @@ const defaultNewProject: ProjectFormValues = {
   progressPercentage: 0,
   deadline: "",
 };
+
+function DescMarkdown({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const long = content.length > 160;
+
+  return (
+    <div className="mb-3">
+      <div className={`prose prose-sm dark:prose-invert max-w-none text-slate-600 dark:text-slate-300 ${!expanded && long ? "line-clamp-3" : ""}`}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+      </div>
+      {long && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline"
+        >
+          {expanded ? <>Show less <ChevronUp className="size-3" /></> : <>View full description <ChevronDown className="size-3" /></>}
+        </button>
+      )}
+    </div>
+  );
+}
 
 export default function AdminProjectsPage() {
   useEffect(() => { document.title = "Projects | Admin | G-Stack"; }, []);
@@ -297,12 +320,7 @@ export default function AdminProjectsPage() {
                         <>
                           <div className="flex items-start justify-between mb-3">
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-50 truncate">{project.title}</h4>
-                                {project.description && (
-                                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate hidden sm:block">{project.description}</p>
-                                )}
-                              </div>
+                              <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-50">{project.title}</h4>
                               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
                                 Due: {project.deadline ? new Date(project.deadline + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "No deadline"}
                               </p>
@@ -319,6 +337,9 @@ export default function AdminProjectsPage() {
                               </button>
                             </div>
                           </div>
+                          {project.description && (
+                            <DescMarkdown content={project.description} />
+                          )}
                           <div className="flex items-center gap-3">
                             <div className="flex-1 bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
                               <div className="bg-blue-600 dark:bg-blue-500 h-full rounded-full transition-all" style={{ width: `${project.progressPercentage}%` }} />

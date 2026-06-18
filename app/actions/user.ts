@@ -91,6 +91,8 @@ export async function getUserProjectById(projectId: string) {
   const session = await auth();
   if (!session?.user?.id) return null;
 
+  if (!/^[0-9a-fA-F]{24}$/.test(projectId)) return null;
+
   await connectMongoDB();
   const project = await ProjectModel.findOne({
     _id: projectId,

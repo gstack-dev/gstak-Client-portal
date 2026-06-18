@@ -414,6 +414,8 @@ export async function getProjectInvoices(projectId: string): Promise<ClientInvoi
   const session = await auth();
   if (!session?.user?.id) return [];
 
+  if (!/^[0-9a-fA-F]{24}$/.test(projectId)) return [];
+
   await connectMongoDB();
 
   const docs = await InvoiceModel.find({ projectId, clientId: session.user.id })
@@ -436,6 +438,8 @@ export async function getProjectInvoices(projectId: string): Promise<ClientInvoi
 export async function areProjectInvoicesPaid(projectId: string): Promise<boolean> {
   const session = await auth();
   if (!session?.user?.id) return true;
+
+  if (!/^[0-9a-fA-F]{24}$/.test(projectId)) return true;
 
   await connectMongoDB();
 
