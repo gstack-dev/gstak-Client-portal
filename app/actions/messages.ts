@@ -102,13 +102,13 @@ export async function getConversations(): Promise<ConversationData[]> {
     .sort({ createdAt: -1 })
     .lean();
 
-  const otherUserIds = new Set<string>();
   const lastMessageMap: Record<string, { content: string; createdAt: Date }> = {};
   const unreadMap: Record<string, number> = {};
+  const messagedIds = new Set<string>();
 
   for (const m of allMessages) {
     const otherId = String(m.senderId) === session.user.id ? String(m.receiverId) : String(m.senderId);
-    otherUserIds.add(otherId);
+    messagedIds.add(otherId);
 
     if (!lastMessageMap[otherId]) {
       lastMessageMap[otherId] = {
@@ -122,19 +122,28 @@ export async function getConversations(): Promise<ConversationData[]> {
     }
   }
 
-  const users = await User.find({ _id: { $in: [...otherUserIds] } }).select("name").lean();
-  const userMap: Record<string, string> = {};
-  for (const u of users) userMap[String(u._id)] = (u.name as string) || "Unknown";
+  const allClients = await User.find({ role: "user" }).select("name").lean();
+  const nameMap: Record<string, string> = {};
+  for (const c of allClients) nameMap[String(c._id)] = (c.name as string) || "Unknown";
 
-  return [...otherUserIds]
-    .map((id) => ({
-      userId: id,
-      name: userMap[id] || "Unknown",
-      lastMessage: lastMessageMap[id]?.content || "",
-      lastMessageAt: lastMessageMap[id]?.createdAt.toISOString() || "",
-      unread: unreadMap[id] || 0,
-    }))
-    .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+  return allClients
+    .map((c) => {
+      const id = String(c._id);
+      const hasMessages = messagedIds.has(id);
+      return {
+        userId: id,
+        name: nameMap[id] || "Unknown",
+        lastMessage: hasMessages ? (lastMessageMap[id]?.content || "") : "",
+        lastMessageAt: hasMessages ? (lastMessageMap[id]?.createdAt.toISOString() || "") : "",
+        unread: hasMessages ? (unreadMap[id] || 0) : 0,
+      };
+    })
+    .sort((a, b) => {
+      const aTime = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      const bTime = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      if (aTime !== bTime) return bTime - aTime;
+      return a.name.localeCompare(b.name);
+    });
 }
 
 export async function getAdminId(): Promise<string | null> {
