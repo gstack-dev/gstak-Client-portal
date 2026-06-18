@@ -5,7 +5,9 @@ import Link from "next/link";
 import { Menu } from "lucide-react";
 import { getSession } from "next-auth/react";
 import type { Session } from "next-auth";
+import { useTranslation } from "@/components/LanguageProvider";
 import ThemeToggle from "@/components/web/ThemeToggle";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
 import { Button } from "@/components/ui/button";
 
 function NavLink({
@@ -32,6 +34,7 @@ function NavLink({
 }
 
 export default function NavBar() {
+  const { t } = useTranslation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [session, setSession] = useState<Session | null | undefined>(undefined);
 
@@ -44,7 +47,7 @@ export default function NavBar() {
   const isLoggedIn = !!session;
 
   const buttonHref = isAdmin ? "/admin" : isUser ? "/dashboard" : "/login";
-  const buttonLabel = isAdmin ? "Admin Dashboard" : isUser ? "Dashboard" : "Client Login";
+  const buttonLabel = isAdmin ? t("landing.adminDashboard") : isUser ? t("landing.dashboard") : t("landing.clientLogin");
 
   return (
     <nav className="fixed top-0 left-0 w-full z-50 bg-white/80 dark:bg-[#0F172A]/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-all duration-300">
@@ -59,14 +62,14 @@ export default function NavBar() {
 
         <div className="hidden md:flex items-center gap-6">
           <NavLink href="/" isActive>
-            Home
+            {t("landing.home")}
           </NavLink>
-          <NavLink href="#features">Features</NavLink>
-          <NavLink href="#pricing">Pricing</NavLink>
+          <NavLink href="#features">{t("landing.features")}</NavLink>
         </div>
 
         <div className="flex items-center gap-2">
           <ThemeToggle />
+          <LanguageSwitcher />
           <Link href={buttonHref} className="hidden md:inline-flex">
             <Button>{buttonLabel}</Button>
           </Link>
@@ -75,7 +78,7 @@ export default function NavBar() {
             size="icon"
             className="md:hidden"
             onClick={() => setMobileOpen(!mobileOpen)}
-            aria-label="Toggle menu"
+            aria-label={t("landing.toggleMenu")}
           >
             <Menu className="size-5" />
           </Button>
@@ -85,10 +88,10 @@ export default function NavBar() {
       {mobileOpen && (
         <div className="md:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0F172A] px-4 py-4 flex flex-col gap-4">
           <NavLink href="/" isActive>
-            Home
+            {t("landing.home")}
           </NavLink>
-          <NavLink href="#features">Features</NavLink>
-          <NavLink href="#pricing">Pricing</NavLink>
+          <NavLink href="#features">{t("landing.features")}</NavLink>
+          <NavLink href="#pricing">{t("landing.pricing")}</NavLink>
           <Link href={buttonHref} className="mt-2" onClick={() => setMobileOpen(false)}>
             <Button className="w-full">{buttonLabel}</Button>
           </Link>

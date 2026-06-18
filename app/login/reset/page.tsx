@@ -1,10 +1,19 @@
+import type { Metadata } from "next";
 import { connectMongoDB } from "@/lib/mongodb";
 import User from "@/models/User";
 import crypto from "crypto";
 import ResetPasswordForm from "./ResetPasswordForm";
 import Link from "next/link";
-import { XCircle } from "lucide-react"; // Added an error icon
-import { Button } from "@/components/ui/button"; // Brought in your Shadcn button
+import { XCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { getDictionary, isValidLocale, defaultLocale, type Locale } from "@/lib/i18n";
+import { cookies } from "next/headers";
+
+export const metadata: Metadata = {
+  title: "Reset Password",
+  description: "Set a new password for your G-Stack Portal account.",
+  robots: { index: false, follow: false },
+};
 
 export default async function ResetPasswordPage({
     searchParams,
@@ -12,11 +21,16 @@ export default async function ResetPasswordPage({
     searchParams: Promise<{ token: string }>;
 }) {
     const params = await searchParams;
+    const cookieStore = await cookies();
+    const localeRaw = cookieStore.get("NEXT_LOCALE")?.value ?? defaultLocale;
+    const locale: Locale = isValidLocale(localeRaw) ? localeRaw : defaultLocale;
+    const dict = await getDictionary(locale);
+    const t = (key: string) => key.split(".").reduce((acc, part) => acc?.[part], dict as any) ?? key;
 
     // 1. Check if the token exists in the URL
     if (!params.token) {
         return (
-            <InvalidTokenUI message="Invalid or missing token. Please request a new password reset link." />
+            <InvalidTokenUI message={t("auth.invalidToken")} t={t} />
         );
     }
 
@@ -36,7 +50,7 @@ export default async function ResetPasswordPage({
 
     if (!user) {
         return (
-            <InvalidTokenUI message="This password reset link is invalid or has expired." />
+            <InvalidTokenUI message={t("auth.linkExpiredDesc")} t={t} />
         );
     }
 
@@ -45,7 +59,7 @@ export default async function ResetPasswordPage({
 }
 
 // Extracted the UI into a clean helper component for reuse
-function InvalidTokenUI({ message }: { message: string }) {
+function InvalidTokenUI({ message, t }: { message: string; t: (key: string) => string }) {
     return (
         <div className="min-h-screen flex items-center justify-center bg-surface dark:bg-[#020817] relative p-margin-mobile md:p-margin-desktop overflow-hidden transition-colors duration-300">
             {/* Decorative Background Elements */}
@@ -57,7 +71,7 @@ function InvalidTokenUI({ message }: { message: string }) {
             <main className="w-full max-w-[440px] relative z-10 flex flex-col items-center">
                 <div className="text-center mb-xl">
                     <h1 className="font-headline-md text-headline-md text-primary dark:text-slate-50 tracking-tight">
-                        G-Stack
+                        {t("auth.gStack")}
                     </h1>
                 </div>
 
@@ -67,7 +81,7 @@ function InvalidTokenUI({ message }: { message: string }) {
                     </div>
                     
                     <h2 className="font-headline-sm text-headline-sm text-on-surface dark:text-slate-50 mb-2">
-                        Link Expired
+                        {t("auth.linkExpired")}
                     </h2>
                     
                     <p className="font-body-sm text-body-sm text-on-surface-variant dark:text-slate-400 mb-8">
@@ -79,7 +93,7 @@ function InvalidTokenUI({ message }: { message: string }) {
                         <Button 
                             className="w-full py-6 font-label-md text-label-md shadow-sm text-white dark:bg-blue-600 dark:hover:bg-blue-700 transition-colors"
                         >
-                            Request New Link
+                            {t("auth.requestNewLink")}
                         </Button>
                     </Link>
                 </div>

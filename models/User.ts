@@ -18,6 +18,13 @@ const userSchema = new mongoose.Schema({
         required: false 
     },
     image: { type: String, required: false },
+    clientType: {
+        type: String,
+        required: false,
+        enum: ["Starter", "Professional", "Agency"]
+    },
+    company: { type: String, required: false },
+    phone: { type: String, required: false },
 }, { timestamps: true });
 
 

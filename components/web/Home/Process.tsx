@@ -1,18 +1,23 @@
-const steps = [
-  { number: "01", title: "Discovery Call", description: "We discuss goals, requirements, and project scope." },
-  { number: "02", title: "Design & Planning", description: "Wireframes, structure, and project roadmap are approved." },
-  { number: "03", title: "Development", description: "Weekly progress updates and transparent project tracking." },
-  { number: "04", title: "Delivery", description: "Project delivery, deployment, and post-launch support." },
-];
+"use client";
+
+import { useTranslation } from "@/components/LanguageProvider";
 
 export default function Process() {
+  const { t } = useTranslation();
+  const steps = [
+    { number: "01", title: t("landing.stepDiscoveryCall"), description: t("landing.stepDiscoveryCallDesc") },
+    { number: "02", title: t("landing.stepDesignPlanning"), description: t("landing.stepDesignPlanningDesc") },
+    { number: "03", title: t("landing.stepDevelopment"), description: t("landing.stepDevelopmentDesc") },
+    { number: "04", title: t("landing.stepDelivery"), description: t("landing.stepDeliveryDesc") },
+  ];
+
   return (
     <section className="px-4 md:px-12 max-w-[1280px] mx-auto py-16">
       <h2
         className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mb-8 text-center"
         style={{ fontFamily: "var(--font-plus-jakarta-sans)" }}
       >
-        A Streamlined Workflow
+        {t("landing.processTitle")}
       </h2>
       <div className="flex flex-col md:flex-row gap-6 justify-between relative">
         <div className="hidden md:block absolute top-6 left-12 right-12 h-[2px] bg-slate-200 dark:bg-slate-800 -z-10" />

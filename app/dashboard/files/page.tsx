@@ -1,133 +1,289 @@
 "use client";
 
-import ViewToggle from "@/components/web/ViewToggle";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
-import { Upload, Download, FileText, FileArchive, FileImage, File } from "lucide-react";
-import { useState } from "react";
-import { dashboardFiles } from "@/lib/data";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Upload,
+  FileText,
+  Image,
+  FileArchive,
+  File,
+  Trash2,
+  FolderKanban,
+  Download,
+  AlertCircle,
+} from "lucide-react";
+import { getUserProjects } from "@/app/actions/user";
+import {
+  getProjectFiles,
+  uploadFile,
+  deleteFile,
+} from "@/app/actions/files";
+import type { ClientProject, FileItem } from "@/types";
+import { useTranslation } from "@/components/LanguageProvider";
 
-const iconMap: Record<string, typeof File> = {
-  image: FileImage,
-  picture_as_pdf: FileText,
-  folder_zip: FileArchive,
-  description: FileText,
+const iconMap: Record<string, typeof FileText> = {
+  "image/": Image,
+  "application/pdf": FileText,
+  "application/zip": FileArchive,
+  "application/x-zip-compressed": FileArchive,
 };
 
-export default function FilesPage() {
-  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-  const [activeTab, setActiveTab] = useState<"recent" | "all">("recent");
-
-  const files = dashboardFiles;
-
-  return (
-    <div className="max-w-[1280px] mx-auto w-full">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
-        <div>
-          <h1
-            className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mb-1"
-            style={{ fontFamily: "var(--font-plus-jakarta-sans)" }}
-          >
-            Files
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Manage and organize your project assets.
-          </p>
-        </div>
-        <Button>
-          <Upload className="size-4 mr-1" />
-          Upload
-        </Button>
-      </div>
-
-      <div className="flex justify-between items-center mb-6 border-b border-slate-200 dark:border-slate-800 pb-2">
-        <div className="flex gap-6">
-          {["recent", "all"].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab as "recent" | "all")}
-              className={`text-sm font-medium pb-2 px-1 transition-colors border-b-2 ${
-                activeTab === tab
-                  ? "text-slate-900 dark:text-slate-50 border-blue-600 dark:border-blue-400"
-                  : "text-slate-500 dark:text-slate-400 border-transparent hover:text-slate-900 dark:hover:text-slate-50"
-              }`}
-            >
-              {tab === "recent" ? "Recent" : "All Files"}
-            </button>
-          ))}
-        </div>
-        <ViewToggle viewMode={viewMode} setViewMode={setViewMode} />
-      </div>
-
-      <div
-        className={
-          viewMode === "grid"
-            ? "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
-            : "flex flex-col gap-2"
-        }
-      >
-        {files.map((file) => (
-          <FileCard key={file.id} {...file} viewMode={viewMode} />
-        ))}
-      </div>
-    </div>
-  );
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function FileCard({
-  icon,
-  fileName,
-  size,
-  date,
-  preview,
-  viewMode,
-  client,
-}: {
-  icon: string;
-  fileName: string;
-  size: string;
-  date: string;
-  preview: string | null;
-  client: string;
-  viewMode: "grid" | "list";
-}) {
-  const Icon = iconMap[icon] || File;
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
+  if (diffHrs < 1) return `${Math.floor(diffMs / (1000 * 60))}m ago`;
+  if (diffHrs < 24) return `${diffHrs}h ago`;
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
 
-  if (viewMode === "list") {
-    return (
-      <div className="flex items-center gap-4 p-4 bg-white dark:bg-[#0F172A] rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-[#1E293B] transition-all cursor-pointer">
-        <Icon className="size-5 text-blue-600 dark:text-blue-400 shrink-0" />
-        <span className="flex-1 text-sm font-medium text-slate-900 dark:text-slate-200 truncate">{fileName}</span>
-        <span className="text-sm text-slate-500 dark:text-slate-400 w-20 shrink-0">{size}</span>
-        <span className="text-sm text-slate-500 dark:text-slate-400 w-24 text-right shrink-0">{date}</span>
-      </div>
-    );
-  }
+export default function DashboardFilesPage() {
+  useEffect(() => { document.title = "Files | G-Stack"; }, []);
+  const { t } = useTranslation();
+  const [projects, setProjects] = useState<ClientProject[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    getUserProjects().then((data) => {
+      setProjects(data);
+      if (data.length > 0) setSelectedProjectId(data[0].id);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    setLoading(true);
+    getProjectFiles(selectedProjectId).then((data) => {
+      setFiles(data);
+      setLoading(false);
+    });
+  }, [selectedProjectId]);
+
+  const handleUpload = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      const form = e.currentTarget;
+      const formData = new FormData(form);
+      const fileInput = form.querySelector(
+        'input[type="file"]'
+      ) as HTMLInputElement;
+      if (!fileInput?.files?.length) {
+        setError(t("files.selectFile"));
+        return;
+      }
+      setUploading(true);
+      setError("");
+      const result = await uploadFile(formData);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        form.reset();
+        const updated = await getProjectFiles(selectedProjectId);
+        setFiles(updated);
+      }
+      setUploading(false);
+    },
+    [selectedProjectId]
+  );
+
+  const handleDelete = useCallback(
+    async (fileId: string) => {
+      const result = await deleteFile(fileId);
+      if (result.error) {
+        setError(result.error);
+      } else {
+        setFiles((prev) => prev.filter((f) => f.id !== fileId));
+      }
+    },
+    []
+  );
+
+  const selectedProject = projects.find(
+    (p) => p.id === selectedProjectId
+  );
 
   return (
-    <div className="bg-white dark:bg-[#0F172A] rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300 group overflow-hidden flex flex-col">
-      <div className={`h-32 flex items-center justify-center relative overflow-hidden ${
-        !preview ? "bg-slate-100 dark:bg-[#1E293B] border-b border-slate-200 dark:border-slate-800"
-          : "bg-slate-50 dark:bg-[#0B1221]"
-      }`}>
-        {preview ? (
-          <img alt={fileName} className="w-full h-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-500" src={preview} />
-        ) : (
-          <Icon className={`size-12 ${icon === "picture_as_pdf" ? "text-red-500 dark:text-red-400" : "text-blue-600 dark:text-blue-400"} opacity-80`} />
-        )}
-        <div className="absolute inset-0 flex items-center justify-center bg-black/10 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button className="bg-white dark:bg-slate-700 text-slate-900 dark:text-white p-2 rounded-full shadow-md hover:bg-blue-600 dark:hover:bg-blue-600 hover:text-white transition-colors">
-            <Download className="size-5" />
-          </button>
+    <div className="max-w-[1280px] mx-auto">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+        <div>
+          <h1
+            className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50"
+            style={{ fontFamily: "var(--font-plus-jakarta-sans)" }}
+          >
+            {t("files.title")}
+          </h1>
+          <p className="text-base text-slate-500 dark:text-slate-400 mt-1">
+            {t("files.subtitleClient")}
+          </p>
         </div>
       </div>
-      <div className="p-4 flex flex-col gap-1 flex-1">
-        <div className="flex items-center gap-1 text-slate-900 dark:text-slate-100">
-          {!preview && <Icon className="size-5 text-blue-600 dark:text-blue-400 shrink-0" />}
-          <span className="text-sm font-medium truncate">{fileName}</span>
+
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* ── Project Selector + Upload ── */}
+        <div className="lg:w-72 shrink-0 space-y-4">
+          <Card className="bg-white dark:bg-[#0F172A] border-slate-200 dark:border-slate-800">
+            <CardContent className="p-4 space-y-3">
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                {t("files.selectProject")}
+              </label>
+              <select
+                value={selectedProjectId}
+                onChange={(e) => setSelectedProjectId(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-sm text-slate-900 dark:text-slate-50 focus:ring-2 focus:ring-blue-500 outline-none"
+              >
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title}
+                  </option>
+                ))}
+              </select>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-white dark:bg-[#0F172A] border-slate-200 dark:border-slate-800">
+            <CardContent className="p-4">
+              <form onSubmit={handleUpload} className="space-y-3">
+                <input type="hidden" name="projectId" value={selectedProjectId} />
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
+                  {t("files.uploadFile")}
+                </label>
+                <input
+                  type="file"
+                  name="file"
+                  className="w-full text-sm text-slate-500 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-blue-600/10 dark:file:bg-blue-600/10 file:text-blue-600 dark:file:text-blue-400 hover:file:bg-blue-600/20 cursor-pointer"
+                />
+                {error && (
+                  <p className="flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+                    <AlertCircle className="size-3" /> {error}
+                  </p>
+                )}
+                <Button type="submit" disabled={uploading || !selectedProjectId} className="w-full">
+                  <Upload className="size-4 mr-1" />
+                  {uploading ? t("common.uploading") : t("common.upload")}
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
         </div>
-        <div className="flex justify-between items-center text-sm text-slate-500 dark:text-slate-400 mt-auto">
-          <span>{size}</span>
-          <span>{date}</span>
+
+        {/* ── Files Grid ── */}
+        <div className="flex-1 min-w-0">
+          {selectedProject && (
+            <div className="flex items-center gap-2 mb-4">
+              <FolderKanban className="size-5 text-slate-500 dark:text-slate-400" />
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">
+                {selectedProject.title}
+              </h2>
+            </div>
+          )}
+
+          {loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className="h-28 rounded-xl bg-slate-100 dark:bg-[#1E293B] animate-pulse"
+                />
+              ))}
+            </div>
+          ) : files.length === 0 ? (
+            <Card className="bg-white dark:bg-[#0F172A] border-slate-200 dark:border-slate-800">
+              <CardContent className="flex flex-col items-center justify-center py-16 text-center">
+                <FileText className="size-12 text-slate-300 dark:text-slate-600 mb-4" />
+                <p className="text-sm font-medium text-slate-500 dark:text-slate-400">
+                  {t("files.noFiles")}
+                </p>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                  {t("files.uploadFirst")}
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {files.map((f) => {
+                const isImage = f.mimeType.startsWith("image/");
+                const Icon =
+                  Object.entries(iconMap).find(([key]) =>
+                    f.mimeType.startsWith(key)
+                  )?.[1] || File;
+                return (
+                  <Card
+                    key={f.id}
+                    className="bg-white dark:bg-[#0F172A] border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-all group"
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-center gap-3 min-w-0">
+                          {isImage ? (
+                            <div className="w-12 h-12 rounded-lg overflow-hidden bg-slate-100 dark:bg-[#1E293B] shrink-0">
+                              <img
+                                src={f.url}
+                                alt={f.originalName}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-12 h-12 rounded-lg bg-slate-100 dark:bg-[#1E293B] flex items-center justify-center shrink-0">
+                              <Icon className="size-6 text-slate-400" />
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-slate-900 dark:text-slate-50 truncate">
+                              {f.originalName}
+                            </p>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                              {formatSize(f.size)} &middot;{" "}
+                              {formatDate(f.createdAt)}
+                            </p>
+                            <p className="text-xs text-slate-400 dark:text-slate-500">
+                              {t("files.by")} {f.uploaderName}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <a
+                          href={f.url}
+                          download={f.originalName}
+                        >
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400"
+                          >
+                            <Download className="size-4" />
+                          </Button>
+                        </a>
+                        {f.canDelete && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8 text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+                            onClick={() => handleDelete(f.id)}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>

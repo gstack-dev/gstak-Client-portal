@@ -80,6 +80,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             token.role = dbUser?.role || "client";
             token.name = dbUser?.name;
             token.email = dbUser?.email;
+            token.id = dbUser?._id.toString();
 
             const isRememberMe = (user as any).isRememberMe;
             if (isRememberMe === false) { 
@@ -96,6 +97,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             session.user.role = token.role as string;
             session.user.name = token.name as string;
             session.user.email = token.email as string;
+            session.user.id = token.id as string;
         }   
         return session;
         },

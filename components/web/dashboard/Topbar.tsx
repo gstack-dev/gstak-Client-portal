@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { getProfile } from "@/app/actions/user";
 import ThemeToggle from "@/components/web/ThemeToggle";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
 import { Menu, Bell } from "lucide-react";
 
 interface TopbarProps {
@@ -43,6 +44,7 @@ export default function Topbar({
       </div>
 
       <div className="flex items-center gap-2">
+        <LanguageSwitcher />
         <ThemeToggle />
 
         <button

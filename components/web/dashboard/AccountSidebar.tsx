@@ -6,6 +6,7 @@ import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Camera, LogOut } from "lucide-react";
+import { useTranslation } from "@/components/LanguageProvider";
 
 export default function AccountPopup({
   isOpen,
@@ -16,6 +17,7 @@ export default function AccountPopup({
   onClose: () => void;
   onSaved?: (data: { name?: string; image?: string | null }) => void;
 }) {
+  const { t } = useTranslation();
   const [user, setUser] = useState<{
     name: string;
     image: string | null;
@@ -59,7 +61,7 @@ export default function AccountPopup({
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 2 * 1024 * 1024) {
-        alert("Image must be smaller than 2MB");
+        alert(t("account.imageTooLarge"));
         return;
       }
       const reader = new FileReader();
@@ -81,7 +83,7 @@ export default function AccountPopup({
         className="text-lg font-bold text-slate-900 dark:text-slate-50 mb-4"
         style={{ fontFamily: "var(--font-plus-jakarta-sans)" }}
       >
-        Account
+        {t("account.title")}
       </h2>
 
       <form action={action} className="flex flex-col gap-2">
@@ -103,7 +105,7 @@ export default function AccountPopup({
             )}
             <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity rounded-full">
               <Camera className="size-6" />
-              <span className="text-[10px] font-medium mt-0.5">Upload</span>
+              <span className="text-[10px] font-medium mt-0.5">{t("account.upload")}</span>
             </div>
           </div>
 
@@ -122,13 +124,13 @@ export default function AccountPopup({
             onClick={() => fileInputRef.current?.click()}
             className="text-xs text-blue-600 dark:text-blue-400 font-medium hover:underline hover:bg-transparent"
           >
-            Change Photo
+            {t("account.changePhoto")}
           </Button>
         </div>
 
         <div className="flex flex-col gap-1.5 mb-4">
           <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 ml-1">
-            Name
+            {t("account.name")}
           </span>
           <Input
             name="name"
@@ -142,7 +144,7 @@ export default function AccountPopup({
           disabled={isPending}
           className="w-full bg-blue-600 dark:bg-blue-600 hover:bg-blue-700 dark:hover:bg-blue-700 text-white transition-all font-medium py-2 rounded-lg"
         >
-          {isPending ? "Updating..." : "Save Changes"}
+          {isPending ? t("account.updating") : t("account.saveChanges")}
         </Button>
       </form>
 
@@ -153,7 +155,7 @@ export default function AccountPopup({
           className="w-full justify-start gap-2 text-sm font-medium text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
         >
           <LogOut className="size-4" />
-          Sign Out
+          {t("account.signOut")}
         </Button>
       </div>
     </div>

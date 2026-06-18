@@ -2,6 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
+import { getUnreadMessageCount } from "@/app/actions/messages";
+import { useTranslation } from "@/components/LanguageProvider";
 import {
   LayoutDashboard,
   Users,
@@ -14,28 +17,20 @@ import {
   Shield,
 } from "lucide-react";
 
-const navItems = [
-  { href: "/admin", icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/admin/clients", icon: Users, label: "Clients" },
-  { href: "/admin/projects", icon: FolderTree, label: "Projects" },
-  { href: "/admin/messages", icon: MessageSquare, label: "Messages" },
-  { href: "/admin/invoices", icon: Receipt, label: "Invoices" },
-  { href: "/admin/files", icon: Folder, label: "Files" },
-  { href: "/admin/analytics", icon: BarChart3, label: "Analytics" },
-];
-
 function NavItem({
   href,
   icon: Icon,
   label,
   pathname,
   onClick,
+  badge,
 }: {
   href: string;
   icon: typeof LayoutDashboard;
   label: string;
   pathname: string;
   onClick: () => void;
+  badge?: number;
 }) {
   const isActive =
     href === "/admin"
@@ -55,6 +50,9 @@ function NavItem({
       >
         <Icon className="size-5" />
         {label}
+        {badge ? (
+          <span className="ml-auto w-2 h-2 rounded-full bg-red-500" />
+        ) : null}
       </Link>
     </li>
   );
@@ -68,6 +66,27 @@ export default function AdminSidebar({
   onClose: () => void;
 }) {
   const pathname = usePathname();
+  const { t } = useTranslation();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  const navItems: { href: string; icon: typeof LayoutDashboard; label: string; badge?: number }[] = [
+    { href: "/admin", icon: LayoutDashboard, label: t("nav.dashboard") },
+    { href: "/admin/clients", icon: Users, label: t("nav.clients") },
+    { href: "/admin/projects", icon: FolderTree, label: t("nav.projects") },
+    { href: "/admin/messages", icon: MessageSquare, label: t("nav.messages") },
+    { href: "/admin/invoices", icon: Receipt, label: t("nav.invoices") },
+    { href: "/admin/files", icon: Folder, label: t("nav.files") },
+    { href: "/admin/analytics", icon: BarChart3, label: t("nav.analytics") },
+  ];
+
+  useEffect(() => {
+    getUnreadMessageCount().then(setUnreadCount);
+  }, []);
+
+  const items = navItems.map((item) => ({
+    ...item,
+    badge: item.href === "/admin/messages" ? unreadCount : undefined,
+  }));
 
   return (
     <>
@@ -96,10 +115,10 @@ export default function AdminSidebar({
                 className="text-base font-bold text-slate-900 dark:text-slate-50"
                 style={{ fontFamily: "var(--font-plus-jakarta-sans)" }}
               >
-                G-Stack Admin
+                {t("nav.gStackAdmin")}
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-500">
-                Agency Management
+                {t("nav.agencyManagement")}
               </p>
             </div>
           </div>
@@ -107,14 +126,14 @@ export default function AdminSidebar({
           <button
             onClick={onClose}
             className="md:hidden p-1 text-slate-400 hover:text-slate-900 dark:hover:text-slate-50 transition-colors"
-            aria-label="Close sidebar"
+            aria-label={t("nav.closeSidebar")}
           >
             <X className="size-5" />
           </button>
         </div>
 
         <ul className="flex flex-col gap-2 flex-1">
-          {navItems.map((item) => (
+          {items.map((item) => (
             <NavItem
               key={item.href}
               href={item.href}
@@ -122,6 +141,7 @@ export default function AdminSidebar({
               label={item.label}
               pathname={pathname}
               onClick={onClose}
+              badge={item.badge}
             />
           ))}
         </ul>

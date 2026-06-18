@@ -6,8 +6,10 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { generateResetToken } from "@/app/actions/resetPassword";
+import { useTranslation } from "@/components/LanguageProvider";
 
 export default function ForgotPasswordPage() {
+    const { t } = useTranslation();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSubmitted, setIsSubmitted] = useState(false);
     const [error, setError] = useState("");
@@ -57,7 +59,7 @@ export default function ForgotPasswordPage() {
                 {/* Header / Logo */}
                 <div className="text-center mb-xl">
                     <h1 className="font-headline-md text-headline-md text-primary dark:text-slate-50 tracking-tight">
-                        G-Stack
+                        {t("auth.gStack")}
                     </h1>
                 </div>
 
@@ -72,13 +74,13 @@ export default function ForgotPasswordPage() {
                                     className="inline-flex items-center text-sm font-label-md text-on-surface-variant dark:text-slate-400 hover:text-primary dark:hover:text-blue-400 transition-colors mb-4"
                                 >
                                     <ArrowLeft className="w-4 h-4 mr-2" />
-                                    Back to login
+                                    {t("auth.backToLogin")}
                                 </Link>
                                 <h2 className="font-headline-sm text-headline-sm text-on-surface dark:text-slate-50">
-                                    Reset Password
+                                    {t("auth.forgotPasswordTitle")}
                                 </h2>
                                 <p className="font-body-sm text-body-sm text-on-surface-variant dark:text-slate-400 mt-xs">
-                                    Enter your email address and we will send you a link to reset your password.
+                                    {t("auth.forgotPasswordDesc")}
                                 </p>
                             </div>
 
@@ -91,7 +93,7 @@ export default function ForgotPasswordPage() {
 
                                 <div className="space-y-sm">
                                     <label htmlFor="email" className="font-label-md text-label-md text-on-surface dark:text-slate-200 block">
-                                        Email
+                                        {t("auth.email")}
                                     </label>
                                     <div className="relative">
                                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-muted-foreground dark:text-slate-500">
@@ -100,7 +102,7 @@ export default function ForgotPasswordPage() {
                                         <Input
                                             id="email"
                                             name="email"
-                                            placeholder="name@company.com"
+                                            placeholder={t("auth.emailPlaceholder")}
                                             type="email"
                                             required
                                             className="pl-10 py-6 bg-surface dark:bg-[#020817] border-outline-variant dark:border-slate-800 font-body-md text-body-md text-on-surface dark:text-slate-50 placeholder:text-on-surface-variant/50 dark:placeholder:text-slate-600 focus-visible:ring-ring dark:focus-visible:ring-blue-600"
@@ -113,7 +115,7 @@ export default function ForgotPasswordPage() {
                                     className="w-full py-6 font-label-md text-label-md shadow-sm text-white dark:bg-blue-600 dark:hover:bg-blue-700 transition-colors"
                                     disabled={isSubmitting}
                                 >
-                                    {isSubmitting ? "Sending Link..." : "Send Reset Link"}
+                                    {isSubmitting ? t("auth.sendingLink") : t("auth.sendResetLink")}
                                 </Button>
                             </form>
                         </>
@@ -123,17 +125,17 @@ export default function ForgotPasswordPage() {
                                 <CheckCircle2 className="h-6 w-6 text-green-600 dark:text-green-400" />
                             </div>
                             <h2 className="font-headline-sm text-headline-sm text-on-surface dark:text-slate-50 mb-2">
-                                Check your email
+                                {t("auth.checkEmail")}
                             </h2>
                             <p className="font-body-sm text-body-sm text-on-surface-variant dark:text-slate-400 mb-6">
-                                If an account exists for that email, we have sent password reset instructions.
+                                {t("auth.checkEmailDesc")}
                             </p>
                             <Link href="/login">
                                 <Button 
                                     variant="outline"
                                     className="w-full py-6 border-outline-variant dark:border-slate-800 bg-surface-container-lowest dark:bg-[#020817] hover:bg-surface-container-low dark:hover:bg-slate-800 font-label-md text-label-md text-on-surface dark:text-slate-200 transition-colors duration-200"
                                 >
-                                    Return to Login
+                                    {t("auth.returnToLogin")}
                                 </Button>
                             </Link>
                         </div>

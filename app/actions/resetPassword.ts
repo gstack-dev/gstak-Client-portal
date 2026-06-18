@@ -3,6 +3,7 @@
 import crypto from "crypto";
 import { connectMongoDB } from "@/lib/mongodb";
 import User from "@/models/User";
+import { sendResetEmail } from "@/lib/email";
 
 export async function generateResetToken(email: string) {
     await connectMongoDB();
@@ -32,17 +33,7 @@ export async function generateResetToken(email: string) {
     user.resetPasswordExpires = passwordResetExpires;
     await user.save();
 
-    // 5. Construct the reset URL
-    // In production, this should be your actual domain (e.g., https://g-stack.com)
-    const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
-    const resetUrl = `${baseUrl}/login/reset?token=${resetToken}`;
-
-    // TODO: Actually send the email here using Resend, SendGrid, or Nodemailer
-    // For now, we will just log it to your terminal so you can click it!
-    console.log("=========================================");
-    console.log(`🔐 SEND PASSWORD RESET EMAIL TO: ${email}`);
-    console.log(`🔗 RESET LINK: ${resetUrl}`);
-    console.log("=========================================");
+    await sendResetEmail(email, resetToken);
 
     return { success: true };
 }

@@ -1,12 +1,15 @@
+"use client";
+
+import { useTranslation } from "@/components/LanguageProvider";
 import { siteConfig } from "@/lib/config/site";
 import Link from "next/link";
 
 export default function Footer() {
+  const { t } = useTranslation();
   return (
     <footer className="w-full py-10 px-4 md:px-12 flex flex-col md:flex-row justify-between items-center bg-white dark:bg-[#0F172A] border-t border-slate-200 dark:border-slate-800 transition-colors">
       <p className="text-xs font-semibold tracking-wider text-slate-500 dark:text-slate-400 mb-4 md:mb-0 uppercase">
-        &copy; {new Date().getFullYear()} G-Stack Digital Agency. All rights
-        reserved.
+        {t("landing.footerCopyright", { year: new Date().getFullYear() })}
       </p>
       <div className="flex gap-6">
         <Link
@@ -15,7 +18,7 @@ export default function Footer() {
           target="_blank"
           rel="noopener noreferrer"
         >
-          Support
+          {t("landing.support")}
         </Link>
       </div>
     </footer>

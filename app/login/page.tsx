@@ -21,6 +21,7 @@ import { siteConfig } from "@/lib/config/site";
 import GoogleSignInButton from "@/components/web/GoogleSingInButton";
 import { useRouter, useSearchParams } from "next/navigation";
 import { signIn } from "next-auth/react";
+import { useTranslation } from "@/components/LanguageProvider";
 
 const loginSchema = z.object({
     email: z.string().email({
@@ -35,6 +36,7 @@ const loginSchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>;
 
 function LoginForm() {
+    const { t } = useTranslation();
     const searchParams = useSearchParams();
     const urlError = searchParams.get("error");
     const router = useRouter();
@@ -80,10 +82,10 @@ function LoginForm() {
             {/* Header / Logo */}
             <div className="text-center mb-xl">
             <h1 className="font-headline-md text-headline-md text-primary dark:text-slate-50 tracking-tight">
-                G-Stack
+                {t("auth.gStack")}
             </h1>
             <p className="font-body-sm text-body-sm text-on-surface-variant dark:text-slate-400 mt-sm">
-                Premium Agency Services
+                {t("auth.premiumServices")}
             </p>
             </div>
 
@@ -91,10 +93,10 @@ function LoginForm() {
             <div className="w-full glass-panel dark:bg-[#0F172A]/80 dark:border-slate-800 rounded-2xl p-xl bg-surface-container-lowest shadow-xl dark:shadow-2xl dark:shadow-black/50 backdrop-blur-xl">
             <div className="mb-lg">
                 <h2 className="font-headline-sm text-headline-sm text-on-surface dark:text-slate-50">
-                Welcome back
+                {t("auth.welcomeBack")}
                 </h2>
                 <p className="font-body-sm text-body-sm text-on-surface-variant dark:text-slate-400 mt-xs">
-                Please enter your details to sign in.
+                {t("auth.welcomeDesc")}
                 </p>
             </div>
 
@@ -120,7 +122,7 @@ function LoginForm() {
                     render={({ field }) => (
                     <FormItem className="space-y-sm">
                         <FormLabel className="font-label-md text-label-md text-on-surface dark:text-slate-200">
-                        Email
+                        {t("auth.email")}
                         </FormLabel>
                         <FormControl>
                         <div className="relative">
@@ -128,7 +130,7 @@ function LoginForm() {
                             <Mail className="h-5 w-5" />
                             </div>
                             <Input
-                            placeholder="name@company.com"
+                            placeholder={t("auth.emailPlaceholder")}
                             type="email"
                             className="pl-10 py-6 bg-surface dark:bg-[#020817] border-outline-variant dark:border-slate-800 font-body-md text-body-md text-on-surface dark:text-slate-50 placeholder:text-on-surface-variant/50 dark:placeholder:text-slate-600 focus-visible:ring-ring dark:focus-visible:ring-blue-600"
                             {...field}
@@ -147,7 +149,7 @@ function LoginForm() {
                     render={({ field }) => (
                     <FormItem className="space-y-sm">
                         <FormLabel className="font-label-md text-label-md text-on-surface dark:text-slate-200">
-                        Password
+                        {t("auth.password")}
                         </FormLabel>
                         <FormControl>
                         <div className="relative">
@@ -155,7 +157,7 @@ function LoginForm() {
                             <Lock className="h-5 w-5" />
                             </div>
                             <Input
-                            placeholder="••••••••"
+                            placeholder={t("auth.passwordPlaceholder")}
                             type="password"
                             className="pl-10 py-6 bg-surface dark:bg-[#020817] border-outline-variant dark:border-slate-800 font-body-md text-body-md text-on-surface dark:text-slate-50 placeholder:text-on-surface-variant/50 dark:placeholder:text-slate-600 focus-visible:ring-ring dark:focus-visible:ring-blue-600"
                             {...field}
@@ -182,7 +184,7 @@ function LoginForm() {
                             />
                         </FormControl>
                         <FormLabel className="font-body-sm text-body-sm text-on-surface-variant dark:text-slate-300 cursor-pointer font-normal mt-0">
-                            Remember me
+                            {t("auth.rememberMe")}
                         </FormLabel>
                         </FormItem>
                     )}
@@ -193,7 +195,7 @@ function LoginForm() {
                         href="/login/forget"
                         className="font-label-md text-label-md text-primary dark:text-white hover:opacity-80 dark:hover:text-blue-400 transition-opacity duration-200"
                     >
-                        Forgot Password?
+                        {t("auth.forgotPassword")}
                     </Link>
                     </div>
                 </div>
@@ -204,7 +206,7 @@ function LoginForm() {
                     className="w-full py-6 font-label-md text-label-md shadow-sm text-white dark:bg-blue-600 dark:hover:bg-blue-700 dark:text-white transition-colors"
                     disabled={form.formState.isSubmitting}
                 >
-                    {form.formState.isSubmitting ? "Signing In..." : "Sign In"}
+                    {form.formState.isSubmitting ? t("auth.signingIn") : t("auth.signIn")}
                 </Button>
                 </form>
             </Form>
@@ -216,7 +218,7 @@ function LoginForm() {
                 </div>
                 <div className="relative flex justify-center">
                 <span className="px-sm bg-surface-container-lowest dark:bg-[#0F172A] font-body-sm text-body-sm text-on-surface-variant dark:text-slate-400">
-                    or continue with
+                    {t("auth.orContinueWith")}
                 </span>
                 </div>
             </div>
@@ -226,9 +228,9 @@ function LoginForm() {
 
             <div className="mt-xl text-center">
                 <p className="font-body-sm text-body-sm text-on-surface-variant dark:text-slate-400">
-                Don't have an account?{" "}
+                {t("auth.noAccount")}{" "}
                 <Link target="_blank" href={`mailto:${siteConfig.adminEmail}?subject=G-Stack%20Portal%20Access%20Request`} className="font-label-md text-label-md text-primary dark:text-white hover:underline dark:hover:text-blue-400 transition-all">
-                    Contact Admin
+                    {t("auth.contactAdmin")}
                 </Link>
                 </p>
             </div>

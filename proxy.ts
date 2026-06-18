@@ -1,40 +1,77 @@
 import { auth } from "@/auth";
+import { NextResponse } from "next/server";
+import { defaultLocale, isValidLocale } from "@/lib/i18n";
+
+const COOKIE_NAME = "NEXT_LOCALE";
 
 export default auth((req) => {
-    const isLoggedIn = !!req.auth;
-    const { pathname } = req.nextUrl;
+  const { pathname } = req.nextUrl;
+  const isLoggedIn = !!req.auth;
 
-    // 1. Group all your protected routes here using startsWith
-    const isProtectedRoute = 
-        pathname.startsWith("/dashboard") || 
-        pathname.startsWith("/admin");
+  // --- Locale detection ---
+  if (!req.cookies.has(COOKIE_NAME)) {
+    const acceptLanguage = req.headers.get("Accept-Language") ?? "";
+    const preferred = acceptLanguage
+      .split(",")
+      .map((l) => l.split(";")[0].trim().split("-")[0])
+      .find((l) => isValidLocale(l));
+    const locale =
+      preferred && isValidLocale(preferred) ? preferred : defaultLocale;
 
-    // 2. If they try to access a protected route without logging in -> Kick to /login
-    if (isProtectedRoute && !isLoggedIn) {
-        return Response.redirect(new URL("/login", req.nextUrl));
+    const response = NextResponse.next();
+    response.cookies.set(COOKIE_NAME, locale, {
+      path: "/",
+      maxAge: 365 * 24 * 60 * 60,
+      sameSite: "lax",
+    });
+    return response;
+  }
+
+  const localeCookie = req.cookies.get(COOKIE_NAME)?.value;
+  if (localeCookie && !isValidLocale(localeCookie)) {
+    const response = NextResponse.next();
+    response.cookies.set(COOKIE_NAME, defaultLocale, {
+      path: "/",
+      maxAge: 365 * 24 * 60 * 60,
+      sameSite: "lax",
+    });
+    return response;
+  }
+
+  // --- Auth-based route protection ---
+  const isProtectedRoute =
+    pathname.startsWith("/dashboard") || pathname.startsWith("/admin");
+
+  if (isProtectedRoute && !isLoggedIn) {
+    return Response.redirect(new URL("/login", req.nextUrl));
+  }
+
+  if (pathname.startsWith("/login") && isLoggedIn) {
+    if (req.auth?.user?.role === "admin") {
+      return Response.redirect(new URL("/admin", req.nextUrl));
     }
+    return Response.redirect(new URL("/dashboard", req.nextUrl));
+  }
 
-    // 3. If they are already logged in and try to view the login page -> Send to their portal
-    if (pathname.startsWith("/login") && isLoggedIn) {
-        if(req.auth?.user?.role === "admin") {
-            return Response.redirect(new URL("/admin", req.nextUrl));
-        }
-        return Response.redirect(new URL("/dashboard", req.nextUrl)); 
-    }
+  if (
+    pathname.startsWith("/admin") &&
+    isLoggedIn &&
+    req.auth?.user?.role === "client"
+  ) {
+    return Response.redirect(new URL("/dashboard", req.nextUrl));
+  }
 
-    // 4. If they are logged in as client and try to access admin -> Kick to dashboard
-    if (pathname.startsWith("/admin") && isLoggedIn && req.auth?.user?.role === "client") {
-        return Response.redirect(new URL("/dashboard", req.nextUrl));
-    }
+  if (
+    pathname.startsWith("/dashboard") &&
+    isLoggedIn &&
+    req.auth?.user?.role === "admin"
+  ) {
+    return Response.redirect(new URL("/admin", req.nextUrl));
+  }
 
-    // 5. If they are logged in as admin and try to access dashboard -> Kick to admin
-    if (pathname.startsWith("/dashboard") && isLoggedIn && req.auth?.user?.role === "admin") {
-        return Response.redirect(new URL("/admin", req.nextUrl));
-    }
-
-    return; 
+  return;
 });
 
 export const config = {
-    matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
+  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };
