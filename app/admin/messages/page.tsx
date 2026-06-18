@@ -46,6 +46,24 @@ export default function AdminMessagesPage() {
   }, [selectedUserId]);
 
   useEffect(() => {
+    const interval = setInterval(async () => {
+      const convs = await getConversations();
+      setConversations(convs);
+    }, 1500);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedUserId) return;
+    const interval = setInterval(async () => {
+      const msgs = await getMessagesWithUser(selectedUserId);
+      setMessages(msgs);
+      await markMessagesAsRead(selectedUserId);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [selectedUserId]);
+
+  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 

@@ -81,6 +81,10 @@ export default function AdminSidebar({
 
   useEffect(() => {
     getUnreadMessageCount().then(setUnreadCount);
+    const interval = setInterval(() => {
+      getUnreadMessageCount().then(setUnreadCount);
+    }, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const items = navItems.map((item) => ({

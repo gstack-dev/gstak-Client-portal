@@ -48,6 +48,16 @@ export default function DashboardMessagesPage() {
   }, []);
 
   useEffect(() => {
+    if (!adminId) return;
+    const interval = setInterval(async () => {
+      const msgs = await getMessagesWithUser(adminId);
+      setMessages(msgs);
+      markMessagesAsRead(adminId);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [adminId]);
+
+  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
