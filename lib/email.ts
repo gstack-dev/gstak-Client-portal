@@ -9,7 +9,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
+const baseUrl = `https://${(process.env.NEXTAUTH_URL ?? "localhost:3000").replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
 
 function emailStyles() {
   return `
