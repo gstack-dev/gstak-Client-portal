@@ -373,7 +373,7 @@ export default function AdminFilesPage() {
                                       </p>
                                     </div>
                                   </div>
-                                  <div className="flex items-center gap-1 opacity-0 group/file-hover:opacity-100 transition-opacity">
+                                  <div className="flex items-center gap-1">
                                     <a
                                       href={`${f.url}?download=1`}
                                       download={f.originalName}

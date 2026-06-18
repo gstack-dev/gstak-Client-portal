@@ -361,10 +361,16 @@ export async function getNotifications(): Promise<Notification[]> {
     userMap[String(u._id)] = (u.name as string) || "Unknown";
   }
 
-  const projectIds = [...new Set(docs.map((d) => String(d.projectId)))];
-  const projects = await ProjectModel.find({ _id: { $in: projectIds } })
-    .select("title")
-    .lean();
+  const projectIds: string[] = docs
+    .map((d) => d.projectId)
+    .filter((id): id is NonNullable<typeof id> => id != null)
+    .map((id) => String(id));
+  const uniqueIds = [...new Set(projectIds)];
+  const projects = uniqueIds.length > 0
+    ? await ProjectModel.find({ _id: { $in: uniqueIds } })
+        .select("title")
+        .lean()
+    : [];
   const projectMap: Record<string, string> = {};
   for (const p of projects) {
     projectMap[String(p._id)] = (p.title as string) || "Untitled";
