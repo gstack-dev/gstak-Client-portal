@@ -51,8 +51,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         }
         })
     ],
+    trustHost: true,
     pages: {
-        signIn: "/login", // Tells Auth.js to use your custom page for logins and errors
+        signIn: "/login",
     },
     callbacks: {
         async signIn({ user, account }) {

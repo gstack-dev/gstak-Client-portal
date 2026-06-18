@@ -124,7 +124,12 @@ export default function AdminProjectsPage() {
         return p.status === filter;
       }),
     }))
-    .filter((c) => c.projects.length > 0);
+    .filter((c) => {
+      // When actively searching/filtering, hide clients with no matches
+      if (search || filter !== "all") return c.projects.length > 0;
+      // Otherwise show all clients, even those with 0 projects
+      return true;
+    });
 
   function startEdit(project: ClientProject) {
     setEditingId(project.id);
@@ -316,9 +321,9 @@ export default function AdminProjectsPage() {
                             </div>
                           </div>
                         </div>
-                      ) : (
-                        <>
-                          <div className="flex items-start justify-between mb-3">
+                  ) : (
+                          <>
+                            <div className="flex items-start justify-between mb-3">
                             <div className="flex-1 min-w-0">
                               <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-50">{project.title}</h4>
                               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -351,6 +356,12 @@ export default function AdminProjectsPage() {
                     </div>
                   );
                 })}
+
+                {client.projects.length === 0 && (
+                  <div className="px-6 py-8 text-center text-sm text-slate-400 dark:text-slate-500">
+                    No projects yet. Add one below.
+                  </div>
+                )}
 
                 {addingClientId === client.id ? (
                   <div className="px-6 py-4 bg-slate-50 dark:bg-[#0B1221]/30">
