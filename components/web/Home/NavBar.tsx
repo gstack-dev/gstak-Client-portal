@@ -91,7 +91,6 @@ export default function NavBar() {
             {t("landing.home")}
           </NavLink>
           <NavLink href="#features">{t("landing.features")}</NavLink>
-          <NavLink href="#pricing">{t("landing.pricing")}</NavLink>
           <Link href={buttonHref} className="mt-2" onClick={() => setMobileOpen(false)}>
             <Button className="w-full">{buttonLabel}</Button>
           </Link>

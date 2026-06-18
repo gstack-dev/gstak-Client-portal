@@ -167,6 +167,7 @@ export async function updateProject(
     projectId: string,
     data: Partial<ProjectFormValues>
 ) {
+    if (!/^[0-9a-fA-F]{24}$/.test(projectId)) return { error: "Invalid project ID", success: false };
     await connectMongoDB();
     try {
         const update: Record<string, unknown> = {};
@@ -228,6 +229,7 @@ export async function updateProject(
 }
 
 export async function deleteProject(projectId: string) {
+    if (!/^[0-9a-fA-F]{24}$/.test(projectId)) return { error: "Invalid project ID", success: false };
     await connectMongoDB();
     try {
         await ProjectModel.deleteOne({ _id: projectId });

@@ -35,7 +35,7 @@ export async function uploadFile(formData: FormData) {
   if (!project) return { error: "Project not found" };
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const blob = await put(`${Date.now()}_${file.name}`, buffer, { access: "public" });
+  const blob = await put(`${Date.now()}_${file.name}`, buffer);
 
   const role = session.user.role === "admin" ? "admin" : "user";
 
