@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Send, MessageSquare, Search, ChevronRight } from "lucide-react";
+import { Send, MessageSquare, Search, ChevronRight, ChevronLeft } from "lucide-react";
 import {
   getConversations,
   getMessagesWithUser,
@@ -104,7 +104,7 @@ export default function AdminMessagesPage() {
     <div className="max-w-[1280px] mx-auto h-[calc(100vh-10rem)]">
       <div className="flex gap-4 h-full">
         {/* ── Conversation List ── */}
-        <div className="w-80 shrink-0 flex flex-col gap-4">
+        <div className={`w-80 shrink-0 flex-col gap-4 ${selectedUserId ? "hidden md:flex" : "flex"}`}>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
             <input
@@ -165,7 +165,7 @@ export default function AdminMessagesPage() {
         </div>
 
         {/* ── Chat Panel ── */}
-        <Card className="flex-1 bg-white dark:bg-[#0F172A] border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden">
+        <Card className={`flex-1 bg-white dark:bg-[#0F172A] border-slate-200 dark:border-slate-800 flex-col overflow-hidden ${!selectedUserId ? "hidden md:flex" : "flex"}`}>
           {!selectedUserId ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-8">
               <MessageSquare className="size-16 text-slate-300 dark:text-slate-600 mb-4" />
@@ -179,7 +179,14 @@ export default function AdminMessagesPage() {
           ) : (
             <>
               {/* ── Header ── */}
-              <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
+              <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 shrink-0 flex items-center gap-3">
+                <button
+                  onClick={() => setSelectedUserId(null)}
+                  className="md:hidden p-1 -ml-1 rounded-lg hover:bg-slate-100 dark:hover:bg-[#1E293B]"
+                  aria-label="Back to conversations"
+                >
+                  <ChevronLeft className="size-5 text-slate-600 dark:text-slate-400" />
+                </button>
                 <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-50">
                   {selectedConv?.name || "Unknown"}
                 </h2>
