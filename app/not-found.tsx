@@ -5,20 +5,23 @@ export default function RootNotFound() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-[#0B1221] p-6">
       <div className="relative w-full">
-        <div className="absolute -top-20 -right-20 size-64 rounded-full bg-blue-600/5 dark:bg-blue-600/5 blur-3xl" />
-        <div className="absolute -bottom-16 -left-16 size-48 rounded-full bg-slate-200/50 dark:bg-slate-800/30 blur-2xl" />
-        <div className="relative text-center">
-          <div className="flex justify-center mb-6">
-            <div className="size-20 rounded-2xl bg-blue-600/10 dark:bg-blue-600/10 flex items-center justify-center">
-              <SearchX className="size-9 text-blue-600 dark:text-blue-400" />
-            </div>
-          </div>
-          <h1
-            className="text-7xl font-bold text-slate-200 dark:text-slate-800 leading-none mb-2"
+        <div
+          className="absolute inset-0 flex items-center justify-center select-none pointer-events-none"
+          aria-hidden
+        >
+          <span
+            className="text-[10rem] sm:text-[14rem] font-bold text-slate-100 dark:text-slate-900/50 leading-none"
             style={{ fontFamily: "var(--font-plus-jakarta-sans)" }}
           >
             404
-          </h1>
+          </span>
+        </div>
+        <div className="relative text-center">
+          <div className="flex justify-center mb-6">
+            <div className="size-16 rounded-2xl bg-blue-600/10 dark:bg-blue-600/10 flex items-center justify-center">
+              <SearchX className="size-7 text-blue-600 dark:text-blue-400" />
+            </div>
+          </div>
           <h2
             className="text-xl font-bold text-slate-900 dark:text-slate-50 mb-2"
             style={{ fontFamily: "var(--font-plus-jakarta-sans)" }}
