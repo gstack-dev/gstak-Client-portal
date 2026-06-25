@@ -54,7 +54,7 @@ function getTimeGroup(iso: string): string {
 
   if (d >= startOfToday) return "Today";
   if (d >= startOfYesterday) return "Yesterday";
-  return "Older";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function formatTime(iso: string): string {
@@ -115,7 +115,14 @@ export default function NotificationsPopup({
     if (!groups[group]) groups[group] = [];
     groups[group].push(n);
   }
-  const groupOrder = ["Today", "Yesterday", "Older"];
+  const groupOrder = Object.keys(groups).sort((a, b) => {
+    const rank = (g: string) => g === "Today" ? 0 : g === "Yesterday" ? 1 : 2;
+    const diff = rank(a) - rank(b);
+    if (diff !== 0) return diff;
+    const dateA = new Date(groups[a][0].createdAt);
+    const dateB = new Date(groups[b][0].createdAt);
+    return dateB.getTime() - dateA.getTime();
+  });
 
   return (
     <div
@@ -152,7 +159,7 @@ export default function NotificationsPopup({
         </div>
       </div>
 
-      <div className="flex-1 max-h-96 overflow-y-auto px-3 py-2 space-y-4">
+      <div className="flex-1 max-h-96 overflow-y-auto px-3 py-2 space-y-4 [&::-webkit-scrollbar]:w-[4px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-300 dark:[&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 dark:hover:[&::-webkit-scrollbar-thumb]:bg-slate-600">
         {notifications.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-10 text-center">
             <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-[#1E293B] flex items-center justify-center mb-3">
