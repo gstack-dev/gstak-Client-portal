@@ -220,7 +220,44 @@
   background-color: rgba(255, 255, 255, 0.8);
 }
 
-/* 4. BASE STYLES */
+/* 4. CUSTOM SCROLLBAR — theme-aware, matches dark/light mode */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(215 16% 82%);
+  border-radius: 9999px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: hsl(217 32% 25%);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(215 16% 65%);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: hsl(217 32% 35%);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(215 16% 82%) transparent;
+}
+
+.dark * {
+  scrollbar-color: hsl(217 32% 25%) transparent;
+}
+
+/* 5. BASE STYLES */
 @layer base {
   * {
     @apply border-border outline-ring/50;
