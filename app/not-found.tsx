@@ -25,7 +25,7 @@ export default function RootNotFound() {
           >
             Page not found
           </h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 max-w-xs mx-auto">
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-8">
             The page you are looking for does not exist or has been moved.
           </p>
           <Link

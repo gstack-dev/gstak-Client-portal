@@ -32,7 +32,7 @@ export default function AdminError({
           >
             Something went wrong
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 max-w-xs mx-auto">
+          <p className="text-sm text-slate-500 dark:text-slate-400 mb-8">
             An unexpected error occurred. Please try again.
           </p>
           <div className="flex items-center justify-center gap-3">
