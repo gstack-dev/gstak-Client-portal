@@ -4,7 +4,7 @@ import { SearchX } from "lucide-react";
 export default function RootNotFound() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-[#0B1221] p-6">
-      <div className="relative max-w-md w-full">
+      <div className="relative w-full">
         <div className="absolute -top-20 -right-20 size-64 rounded-full bg-blue-600/5 dark:bg-blue-600/5 blur-3xl" />
         <div className="absolute -bottom-16 -left-16 size-48 rounded-full bg-slate-200/50 dark:bg-slate-800/30 blur-2xl" />
         <div className="relative text-center">
