@@ -23,5 +23,7 @@ const fileSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 fileSchema.index({ projectId: 1, createdAt: -1 });
+fileSchema.index({ uploadedBy: 1, createdAt: -1 });
+fileSchema.index({ createdAt: -1 });
 
 export default mongoose.models.File || mongoose.model("File", fileSchema);

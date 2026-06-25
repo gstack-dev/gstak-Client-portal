@@ -4,6 +4,8 @@ import { cache } from "react";
 import { auth } from "@/auth";
 import { connectMongoDB } from "@/lib/mongodb";
 import { rateLimitAction } from "@/lib/rate-limiter";
+import { withCache, clearCache } from "@/lib/cache";
+import { recordAuditEvent } from "@/lib/audit";
 import { sendWelcomeEmail, sendStatusChangeEmail } from "@/lib/email";
 import bcrypt from "bcryptjs";
 import User from "@/models/User";
@@ -43,6 +45,8 @@ export async function createClient(
             image: client.image,
         });
 
+        recordAuditEvent({ action: "client.create", userId: session.user.id, role: "admin", metadata: { newUserId: String(newUser._id), email: client.email } });
+
         await sendWelcomeEmail(client.email, client.password);
 
         const projectDocs = projects
@@ -57,8 +61,15 @@ export async function createClient(
             }));
 
         if (projectDocs.length > 0) {
-            await ProjectModel.insertMany(projectDocs);
+            const created = await ProjectModel.insertMany(projectDocs);
+            for (const proj of created) {
+                recordAuditEvent({ action: "project.create", userId: session.user.id, role: "admin", metadata: { projectId: String(proj._id), title: proj.title } });
+            }
         }
+
+        clearCache("clients");
+        clearCache("adminMetrics");
+        clearCache("adminAnalytics");
 
         return { success: true }
     } catch (error) {
@@ -72,48 +83,51 @@ export const getClients = cache(async function getClients() {
     if (!session?.user?.id || session.user.role !== "admin") {
         return { clients: [] };
     }
-    await connectMongoDB();
-    const docs = await User.aggregate([
-        { $match: { role: "user" } },
-        {
-            $lookup: {
-                from: "projects",
-                localField: "_id",
-                foreignField: "clientId",
-                as: "projects",
+    return withCache("clients", async () => {
+        await connectMongoDB();
+        const docs = await User.aggregate([
+            { $match: { role: "user" } },
+            {
+                $lookup: {
+                    from: "projects",
+                    localField: "_id",
+                    foreignField: "clientId",
+                    as: "projects",
+                },
             },
-        },
-        {
-            $addFields: {
-                projectCount: { $size: "$projects" },
+            {
+                $addFields: {
+                    projectCount: { $size: "$projects" },
+                },
             },
-        },
-        { $sort: { createdAt: -1 } },
-    ]);
-    const clients: Client[] = docs.map((doc) => ({
-        id: String(doc._id),
-        name: doc.name as string,
-        email: doc.email as string,
-        password: "",
-        role: "user",
-        client_type: ((doc.clientType as string)?.toLowerCase() ?? "starter") as Client["client_type"],
-        image: (doc.image as string) ?? null,
-        projects: (doc.projects as any[]).map((p: any) => ({
-            id: String(p._id),
-            title: p.title as string,
-            description: p.description as string | undefined,
-            status: p.status as ClientProject["status"],
-            progressPercentage: p.progressPercentage as number,
-            deadline: p.deadLine
-                ? new Date(p.deadLine as string).toISOString().split("T")[0]
+            { $sort: { createdAt: -1 } },
+        ]);
+        const clients: Client[] = docs.map((doc) => ({
+            id: String(doc._id),
+            name: doc.name as string,
+            email: doc.email as string,
+            password: "",
+            role: "user",
+            client_type: ((doc.clientType as string)?.toLowerCase() ?? "starter") as Client["client_type"],
+            image: (doc.image as string) ?? null,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            projects: (doc.projects as any[]).map((p: Record<string, unknown>) => ({
+                id: String(p._id),
+                title: p.title as string,
+                description: p.description as string | undefined,
+                status: p.status as ClientProject["status"],
+                progressPercentage: p.progressPercentage as number,
+                deadline: p.deadLine
+                    ? new Date(p.deadLine as string).toISOString().split("T")[0]
+                    : "",
+                clientId: String(doc._id),
+            })),
+            since: doc.createdAt
+                ? new Date(doc.createdAt as string).toLocaleDateString("en-US", { month: "short", year: "numeric" })
                 : "",
-            clientId: String(doc._id),
-        })),
-        since: doc.createdAt
-            ? new Date(doc.createdAt as string).toLocaleDateString("en-US", { month: "short", year: "numeric" })
-            : "",
-    }));
-    return { clients };
+        }));
+        return { clients };
+    }, 30_000);
 })
 
 export async function deleteClient(clientId: string) {
@@ -134,6 +148,16 @@ export async function deleteClient(clientId: string) {
             $or: [{ senderId: clientId }, { receiverId: clientId }],
         });
         await LoginSessionModel.deleteMany({ userId: clientId });
+
+        recordAuditEvent({ action: "client.delete", userId: session.user.id, role: "admin", metadata: { clientId } });
+
+        clearCache("clients");
+        clearCache("adminMetrics");
+        clearCache("adminAnalytics");
+        clearCache("invoices:");
+        clearCache("files:");
+        clearCache("notifications:");
+
         return { success: true }
     } catch (error) {
         console.error(error);
@@ -164,6 +188,7 @@ export async function addProject(projects: ProjectFormValues[], clientId: string
             const created = await ProjectModel.insertMany(projectDocs);
             const admin = await User.findOne({ role: "admin" }).select("_id").lean();
             for (const proj of created) {
+                recordAuditEvent({ action: "project.create", userId: session.user.id, role: "admin", metadata: { projectId: String(proj._id), title: proj.title, clientId } });
                 await NotificationModel.create({
                     type: "status_change",
                     message: `Project "${proj.title}" created`,
@@ -173,6 +198,9 @@ export async function addProject(projects: ProjectFormValues[], clientId: string
                 });
             }
         }
+
+        clearCache("clients");
+        clearCache("adminMetrics");
 
         return { success: true }
     } catch (error) {
@@ -195,6 +223,8 @@ export async function updateProject(
     data: Partial<ProjectFormValues>
 ) {
     if (!/^[0-9a-fA-F]{24}$/.test(projectId)) return { error: "Invalid project ID", success: false };
+    const session = await auth();
+    if (!session?.user?.id) return { error: "Unauthorized", success: false };
     await connectMongoDB();
     try {
         const update: Record<string, unknown> = {};
@@ -207,12 +237,13 @@ export async function updateProject(
         const prevProject = await ProjectModel.findById(projectId).lean();
         await ProjectModel.updateOne({ _id: projectId }, { $set: update });
 
+        recordAuditEvent({ action: "project.update", userId: session.user.id, role: session.user.role, metadata: { projectId } });
+
         if (data.status !== undefined && prevProject && prevProject.status !== data.status) {
             const projectTitle = (prevProject.title as string) || "Untitled";
             const clientId = String(prevProject.clientId);
             const oldStatus = statusLabels[prevProject.status as string] || (prevProject.status as string);
             const newStatus = statusLabels[data.status] || data.status;
-            const session = await auth();
 
             const admin = await User.findOne({ role: "admin" }).select("_id name").lean();
             const client = await User.findById(clientId).select("name email").lean();
@@ -226,10 +257,10 @@ export async function updateProject(
                     projectId,
                 });
 
-                if ((client as any).email) {
+                if (client.email) {
                     sendStatusChangeEmail(
-                        (client as any).email,
-                        (client as any).name || "Client",
+                        client.email,
+                        client.name || "Client",
                         projectTitle,
                         oldStatus,
                         newStatus
@@ -247,6 +278,10 @@ export async function updateProject(
                 });
             }
         }
+
+        clearCache("clients");
+        clearCache("adminMetrics");
+        clearCache("adminAnalytics");
 
         return { success: true }
     } catch (error) {
@@ -266,6 +301,14 @@ export async function deleteProject(projectId: string) {
         await ProjectModel.deleteOne({ _id: projectId });
         await FileModel.deleteMany({ projectId });
         await InvoiceModel.deleteMany({ projectId });
+
+        recordAuditEvent({ action: "project.delete", userId: session.user.id, role: "admin", metadata: { projectId } });
+
+        clearCache("clients");
+        clearCache("adminMetrics");
+        clearCache("files:");
+        clearCache("invoices:");
+
         return { success: true }
     } catch (error) {
         console.error(error);

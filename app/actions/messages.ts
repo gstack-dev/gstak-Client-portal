@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { connectMongoDB } from "@/lib/mongodb";
 import { rateLimitAction } from "@/lib/rate-limiter";
+import { recordAuditEvent } from "@/lib/audit";
 import MessageModel from "@/models/Message";
 import User from "@/models/User";
 
@@ -45,6 +46,8 @@ export async function sendMessage(formData: FormData) {
     receiverId,
     content: content.trim(),
   });
+
+  recordAuditEvent({ action: "message.send", userId: session.user.id, role: session.user.role });
 
   revalidatePath("/dashboard/messages");
   revalidatePath("/admin/messages");

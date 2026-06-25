@@ -6,6 +6,9 @@ import { put, del } from "@vercel/blob";
 import { auth } from "@/auth";
 import { connectMongoDB } from "@/lib/mongodb";
 import { rateLimitAction } from "@/lib/rate-limiter";
+import { withCache, clearCache } from "@/lib/cache";
+import { withRetry, withFallback } from "@/lib/graceful";
+import { recordAuditEvent } from "@/lib/audit";
 import FileModel from "@/models/File";
 import NotificationModel from "@/models/Notification";
 import ProjectModel from "@/models/Project";
@@ -80,7 +83,8 @@ export async function uploadFile(formData: FormData) {
   if (!project) return { error: "Project not found" };
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  const blob = await put(`${Date.now()}_${file.name}`, buffer, { access: "private" });
+  const blob = await withRetry(() => put(`${Date.now()}_${file.name}`, buffer, { access: "private" }), 2, "blob.put").catch(() => null);
+  if (!blob) return { error: "Failed to upload file to storage. Please try again." };
 
   const role = session.user.role === "admin" ? "admin" : "user";
 
@@ -94,7 +98,8 @@ export async function uploadFile(formData: FormData) {
     uploaderRole: role,
   });
 
-  // ── Create notification ──
+  recordAuditEvent({ action: "file.upload", userId: session.user.id, role, metadata: { projectId, fileName: file.name } });
+
   const projectTitle = (project.title as string) || "Untitled";
   const uploaderName = (session.user.name as string) || (role === "admin" ? "Admin" : "You");
 
@@ -102,11 +107,9 @@ export async function uploadFile(formData: FormData) {
   let toUser: string | null = null;
 
   if (role === "admin") {
-    // Notify the client
     toUser = String(project.clientId);
     message = `Admin uploaded ${file.name} to ${projectTitle}`;
   } else {
-    // Notify all admins
     toUser = await getAdminId();
     message = `${uploaderName} uploaded ${file.name} to ${projectTitle}`;
   }
@@ -140,13 +143,12 @@ export async function uploadFile(formData: FormData) {
 
   await NotificationModel.insertMany(notificationsToCreate);
 
-  // ── Send email ──
   if (role === "admin") {
     const client = await User.findById(project.clientId).select("name email").lean();
-    if (client && (client as any).email) {
+    if (client && client.email) {
       sendFileUploadEmail(
-        (client as any).email,
-        (client as any).name || "Client",
+        client.email,
+        client.name || "Client",
         projectTitle,
         file.name,
         (session.user.name as string) || "Admin"
@@ -154,16 +156,19 @@ export async function uploadFile(formData: FormData) {
     }
   } else {
     const admin = await User.findOne({ role: "admin" }).select("email name").lean();
-    if (admin && (admin as any).email) {
+    if (admin && admin.email) {
       sendFileUploadEmail(
-        (admin as any).email,
-        (admin as any).name || "Admin",
+        admin.email,
+        admin.name || "Admin",
         projectTitle,
         file.name,
         (session.user.name as string) || "You"
       );
     }
   }
+
+  clearCache("files:");
+  clearCache("notifications:");
 
   revalidatePath("/dashboard/files");
   revalidatePath("/admin/files");
@@ -181,40 +186,42 @@ export const getProjectFiles = cache(async function getProjectFiles(projectId: s
 
   if (!/^[0-9a-fA-F]{24}$/.test(projectId)) return [];
 
-  await connectMongoDB();
+  return withCache(`files:project:${projectId}`, async () => {
+    await connectMongoDB();
 
-  const docs = await FileModel.find({ projectId })
-    .sort({ createdAt: -1 })
-    .limit(200)
-    .lean();
+    const docs = await FileModel.find({ projectId })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .lean();
 
-  const project = await ProjectModel.findById(projectId).select("title").lean();
-  const projectTitle = (project?.title as string) || "";
+    const project = await ProjectModel.findById(projectId).select("title").lean();
+    const projectTitle = (project?.title as string) || "";
 
-  const userIds = [...new Set(docs.map((d) => String(d.uploadedBy)))];
-  const users = await User.find({ _id: { $in: userIds } })
-    .select("name")
-    .lean();
-  const userMap: Record<string, string> = {};
-  for (const u of users) {
-    userMap[String(u._id)] = (u.name as string) || "Unknown";
-  }
+    const userIds = [...new Set(docs.map((d) => String(d.uploadedBy)))];
+    const users = await User.find({ _id: { $in: userIds } })
+      .select("name")
+      .lean();
+    const userMap: Record<string, string> = {};
+    for (const u of users) {
+      userMap[String(u._id)] = (u.name as string) || "Unknown";
+    }
 
-  return docs.map((d) => ({
-    id: String(d._id),
-    fileName: d.fileName as string,
-    originalName: d.originalName as string,
-    size: d.size as number,
-    mimeType: d.mimeType as string,
-    url: `/api/files/${String(d._id)}`,
-    projectId,
-    projectTitle,
-    uploadedBy: String(d.uploadedBy),
-    uploaderName: userMap[String(d.uploadedBy)] || "Unknown",
-    uploaderRole: d.uploaderRole as "admin" | "user",
-    canDelete: session.user.role === "admin" || String(d.uploadedBy) === session.user.id,
-    createdAt: (d.createdAt as Date).toISOString(),
-  }));
+    return docs.map((d) => ({
+      id: String(d._id),
+      fileName: d.fileName as string,
+      originalName: d.originalName as string,
+      size: d.size as number,
+      mimeType: d.mimeType as string,
+      url: `/api/files/${String(d._id)}`,
+      projectId,
+      projectTitle,
+      uploadedBy: String(d.uploadedBy),
+      uploaderName: userMap[String(d.uploadedBy)] || "Unknown",
+      uploaderRole: d.uploaderRole as "admin" | "user",
+      canDelete: session.user.role === "admin" || String(d.uploadedBy) === session.user.id,
+      createdAt: (d.createdAt as Date).toISOString(),
+    }));
+  }, 30_000);
 })
 
 // ── Client: all files across their projects ────────────
@@ -223,47 +230,49 @@ export const getClientFiles = cache(async function getClientFiles(): Promise<Fil
   const session = await auth();
   if (!session?.user?.id) return [];
 
-  await connectMongoDB();
+  return withCache(`files:client:${session.user.id}`, async () => {
+    await connectMongoDB();
 
-  const projects = await ProjectModel.find({ clientId: session.user.id })
-    .select("_id title")
-    .limit(100)
-    .lean();
-  const projectIds = projects.map((p) => p._id);
-  const projectTitles: Record<string, string> = {};
-  for (const p of projects) {
-    projectTitles[String(p._id)] = (p.title as string) || "Untitled";
-  }
+    const projects = await ProjectModel.find({ clientId: session.user.id })
+      .select("_id title")
+      .limit(100)
+      .lean();
+    const projectIds = projects.map((p) => p._id);
+    const projectTitles: Record<string, string> = {};
+    for (const p of projects) {
+      projectTitles[String(p._id)] = (p.title as string) || "Untitled";
+    }
 
-  const docs = await FileModel.find({ projectId: { $in: projectIds } })
-    .sort({ createdAt: -1 })
-    .limit(200)
-    .lean();
+    const docs = await FileModel.find({ projectId: { $in: projectIds } })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .lean();
 
-  const userIds = [...new Set(docs.map((d) => String(d.uploadedBy)))];
-  const users = await User.find({ _id: { $in: userIds } })
-    .select("name")
-    .lean();
-  const userMap: Record<string, string> = {};
-  for (const u of users) {
-    userMap[String(u._id)] = (u.name as string) || "Unknown";
-  }
+    const userIds = [...new Set(docs.map((d) => String(d.uploadedBy)))];
+    const users = await User.find({ _id: { $in: userIds } })
+      .select("name")
+      .lean();
+    const userMap: Record<string, string> = {};
+    for (const u of users) {
+      userMap[String(u._id)] = (u.name as string) || "Unknown";
+    }
 
-  return docs.map((d) => ({
-    id: String(d._id),
-    fileName: d.fileName as string,
-    originalName: d.originalName as string,
-    size: d.size as number,
-    mimeType: d.mimeType as string,
-    url: `/api/files/${String(d._id)}`,
-    projectId: String(d.projectId),
-    projectTitle: projectTitles[String(d.projectId)] || "Untitled",
-    uploadedBy: String(d.uploadedBy),
-    uploaderName: userMap[String(d.uploadedBy)] || "Unknown",
-    uploaderRole: d.uploaderRole as "admin" | "user",
-    canDelete: session.user.role === "admin" || String(d.uploadedBy) === session.user.id,
-    createdAt: (d.createdAt as Date).toISOString(),
-  }));
+    return docs.map((d) => ({
+      id: String(d._id),
+      fileName: d.fileName as string,
+      originalName: d.originalName as string,
+      size: d.size as number,
+      mimeType: d.mimeType as string,
+      url: `/api/files/${String(d._id)}`,
+      projectId: String(d.projectId),
+      projectTitle: projectTitles[String(d.projectId)] || "Untitled",
+      uploadedBy: String(d.uploadedBy),
+      uploaderName: userMap[String(d.uploadedBy)] || "Unknown",
+      uploaderRole: d.uploaderRole as "admin" | "user",
+      canDelete: session.user.role === "admin" || String(d.uploadedBy) === session.user.id,
+      createdAt: (d.createdAt as Date).toISOString(),
+    }));
+  }, 30_000);
 })
 
 // ── Admin: all files grouped by client → project ───────
@@ -282,71 +291,73 @@ export const getAdminFilesGrouped = cache(async function getAdminFilesGrouped():
   const session = await auth();
   if (!session?.user?.id) return [];
 
-  await connectMongoDB();
+  return withCache("files:admin", async () => {
+    await connectMongoDB();
 
-  const clients = await User.find({ role: "user" }).select("name").lean();
-  const clientIds = clients.map((c) => c._id);
+    const clients = await User.find({ role: "user" }).select("name").lean();
+    const clientIds = clients.map((c) => c._id);
 
-  const projects = await ProjectModel.find({ clientId: { $in: clientIds } })
-    .select("title clientId")
-    .sort({ createdAt: -1 })
-    .limit(200)
-    .lean();
+    const projects = await ProjectModel.find({ clientId: { $in: clientIds } })
+      .select("title clientId")
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .lean();
 
-  const projectIds = projects.map((p) => p._id);
-  const files = await FileModel.find({ projectId: { $in: projectIds } })
-    .sort({ createdAt: -1 })
-    .limit(500)
-    .lean();
+    const projectIds = projects.map((p) => p._id);
+    const files = await FileModel.find({ projectId: { $in: projectIds } })
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .lean();
 
-  const userIds = [...new Set(files.map((d) => String(d.uploadedBy)))];
-  const users = await User.find({ _id: { $in: userIds } })
-    .select("name")
-    .lean();
-  const userMap: Record<string, string> = {};
-  for (const u of users) {
-    userMap[String(u._id)] = (u.name as string) || "Unknown";
-  }
-
-  const fileItems: FileItem[] = files.map((d) => ({
-    id: String(d._id),
-    fileName: d.fileName as string,
-    originalName: d.originalName as string,
-    size: d.size as number,
-    mimeType: d.mimeType as string,
-    url: `/api/files/${String(d._id)}`,
-    projectId: String(d.projectId),
-    uploadedBy: String(d.uploadedBy),
-    uploaderName: userMap[String(d.uploadedBy)] || "Unknown",
-    uploaderRole: d.uploaderRole as "admin" | "user",
-    canDelete: session.user.role === "admin" || String(d.uploadedBy) === session.user.id,
-    createdAt: (d.createdAt as Date).toISOString(),
-  }));
-
-  const filesByProject: Record<string, FileItem[]> = {};
-  for (const f of fileItems) {
-    if (!filesByProject[f.projectId]) filesByProject[f.projectId] = [];
-    filesByProject[f.projectId].push(f);
-  }
-
-  const result: AdminFileGroup[] = [];
-  for (const c of clients) {
-    const cid = String(c._id);
-    const clientName = (c.name as string) || "Unnamed";
-    const clientProjects = projects
-      .filter((p) => String(p.clientId) === cid)
-      .map((p) => ({
-        projectId: String(p._id),
-        projectTitle: (p.title as string) || "Untitled",
-        files: filesByProject[String(p._id)] || [],
-      }));
-
-    if (clientProjects.length > 0) {
-      result.push({ clientId: cid, clientName, projects: clientProjects });
+    const userIds = [...new Set(files.map((d) => String(d.uploadedBy)))];
+    const users = await User.find({ _id: { $in: userIds } })
+      .select("name")
+      .lean();
+    const userMap: Record<string, string> = {};
+    for (const u of users) {
+      userMap[String(u._id)] = (u.name as string) || "Unknown";
     }
-  }
 
-  return result;
+    const fileItems: FileItem[] = files.map((d) => ({
+      id: String(d._id),
+      fileName: d.fileName as string,
+      originalName: d.originalName as string,
+      size: d.size as number,
+      mimeType: d.mimeType as string,
+      url: `/api/files/${String(d._id)}`,
+      projectId: String(d.projectId),
+      uploadedBy: String(d.uploadedBy),
+      uploaderName: userMap[String(d.uploadedBy)] || "Unknown",
+      uploaderRole: d.uploaderRole as "admin" | "user",
+      canDelete: session.user.role === "admin" || String(d.uploadedBy) === session.user.id,
+      createdAt: (d.createdAt as Date).toISOString(),
+    }));
+
+    const filesByProject: Record<string, FileItem[]> = {};
+    for (const f of fileItems) {
+      if (!filesByProject[f.projectId]) filesByProject[f.projectId] = [];
+      filesByProject[f.projectId].push(f);
+    }
+
+    const result: AdminFileGroup[] = [];
+    for (const c of clients) {
+      const cid = String(c._id);
+      const clientName = (c.name as string) || "Unnamed";
+      const clientProjects = projects
+        .filter((p) => String(p.clientId) === cid)
+        .map((p) => ({
+          projectId: String(p._id),
+          projectTitle: (p.title as string) || "Untitled",
+          files: filesByProject[String(p._id)] || [],
+        }));
+
+      if (clientProjects.length > 0) {
+        result.push({ clientId: cid, clientName, projects: clientProjects });
+      }
+    }
+
+    return result;
+  }, 30_000);
 })
 
 // ── Delete a file ──────────────────────────────────────
@@ -364,9 +375,14 @@ export async function deleteFile(fileId: string) {
     return { error: "You can only delete files you uploaded" };
   }
 
-  await del(fileDoc.fileName as string);
+  await withRetry(() => del(fileDoc.fileName as string), 2, "blob.del").catch(() => {});
 
   await FileModel.findByIdAndDelete(fileId);
+
+  recordAuditEvent({ action: "file.delete", userId: session.user.id, role: session.user.role, metadata: { fileId } });
+
+  clearCache("files:");
+  clearCache("notifications:");
 
   revalidatePath("/dashboard/files");
   revalidatePath("/admin/files");
@@ -396,50 +412,52 @@ export const getNotifications = cache(async function getNotifications(): Promise
   const session = await auth();
   if (!session?.user?.id) return [];
 
-  await connectMongoDB();
+  return withCache(`notifications:${session.user.id}`, async () => {
+    await connectMongoDB();
 
-  const docs = await NotificationModel.find({ toUser: session.user.id })
-    .sort({ createdAt: -1 })
-    .limit(20)
-    .lean();
+    const docs = await NotificationModel.find({ toUser: session.user.id })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
 
-  const fromIds = [...new Set(docs.map((d) => String(d.fromUser)))];
-  const users = await User.find({ _id: { $in: fromIds } })
-    .select("name")
-    .lean();
-  const userMap: Record<string, string> = {};
-  for (const u of users) {
-    userMap[String(u._id)] = (u.name as string) || "Unknown";
-  }
+    const fromIds = [...new Set(docs.map((d) => String(d.fromUser)))];
+    const users = await User.find({ _id: { $in: fromIds } })
+      .select("name")
+      .lean();
+    const userMap: Record<string, string> = {};
+    for (const u of users) {
+      userMap[String(u._id)] = (u.name as string) || "Unknown";
+    }
 
-  const projectIds: string[] = docs
-    .map((d) => d.projectId)
-    .filter((id): id is NonNullable<typeof id> => id != null)
-    .map((id) => String(id));
-  const uniqueIds = [...new Set(projectIds)];
-  const projects = uniqueIds.length > 0
-    ? await ProjectModel.find({ _id: { $in: uniqueIds } })
-        .select("title")
-        .lean()
-    : [];
-  const projectMap: Record<string, string> = {};
-  for (const p of projects) {
-    projectMap[String(p._id)] = (p.title as string) || "Untitled";
-  }
+    const projectIds: string[] = docs
+      .map((d) => d.projectId)
+      .filter((id): id is NonNullable<typeof id> => id != null)
+      .map((id) => String(id));
+    const uniqueIds = [...new Set(projectIds)];
+    const projects = uniqueIds.length > 0
+      ? await ProjectModel.find({ _id: { $in: uniqueIds } })
+          .select("title")
+          .lean()
+      : [];
+    const projectMap: Record<string, string> = {};
+    for (const p of projects) {
+      projectMap[String(p._id)] = (p.title as string) || "Untitled";
+    }
 
-  return docs.map((d) => ({
-    id: String(d._id),
-    type: d.type as "file_upload",
-    message: d.message as string,
-    fromUser: String(d.fromUser),
-    fromUserName: userMap[String(d.fromUser)] || "Unknown",
-    toUser: String(d.toUser),
-    projectId: String(d.projectId),
-    projectTitle: projectMap[String(d.projectId)] || "Untitled",
-    fileId: String(d.fileId),
-    read: (d.read as boolean) || false,
-    createdAt: (d.createdAt as Date).toISOString(),
-  }));
+    return docs.map((d) => ({
+      id: String(d._id),
+      type: d.type as "file_upload",
+      message: d.message as string,
+      fromUser: String(d.fromUser),
+      fromUserName: userMap[String(d.fromUser)] || "Unknown",
+      toUser: String(d.toUser),
+      projectId: String(d.projectId),
+      projectTitle: projectMap[String(d.projectId)] || "Untitled",
+      fileId: String(d.fileId),
+      read: (d.read as boolean) || false,
+      createdAt: (d.createdAt as Date).toISOString(),
+    }));
+  }, 15_000);
 })
 
 export async function markNotificationRead(notificationId: string) {
@@ -460,33 +478,35 @@ export const getProjectActivity = cache(async function getProjectActivity(projec
   const session = await auth();
   if (!session?.user?.id) return [];
 
-  await connectMongoDB();
+  return withCache(`activity:project:${projectId}`, async () => {
+    await connectMongoDB();
 
-  const docs = await NotificationModel.find({ projectId, toUser: session.user.id })
-    .sort({ createdAt: -1 })
-    .limit(20)
-    .lean();
+    const docs = await NotificationModel.find({ projectId, toUser: session.user.id })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .lean();
 
-  const fromIds = [...new Set(docs.map((d) => String(d.fromUser)))];
-  const users = await User.find({ _id: { $in: fromIds } })
-    .select("name")
-    .lean();
-  const userMap: Record<string, string> = {};
-  for (const u of users) {
-    userMap[String(u._id)] = (u.name as string) || "Unknown";
-  }
+    const fromIds = [...new Set(docs.map((d) => String(d.fromUser)))];
+    const users = await User.find({ _id: { $in: fromIds } })
+      .select("name")
+      .lean();
+    const userMap: Record<string, string> = {};
+    for (const u of users) {
+      userMap[String(u._id)] = (u.name as string) || "Unknown";
+    }
 
-  return docs.map((d) => ({
-    id: String(d._id),
-    type: d.type as Notification["type"],
-    message: d.message as string,
-    fromUser: String(d.fromUser),
-    fromUserName: userMap[String(d.fromUser)] || "Unknown",
-    toUser: String(d.toUser),
-    projectId: String(d.projectId || ""),
-    read: (d.read as boolean) || false,
-    createdAt: (d.createdAt as Date).toISOString(),
-  }));
+    return docs.map((d) => ({
+      id: String(d._id),
+      type: d.type as Notification["type"],
+      message: d.message as string,
+      fromUser: String(d.fromUser),
+      fromUserName: userMap[String(d.fromUser)] || "Unknown",
+      toUser: String(d.toUser),
+      projectId: String(d.projectId || ""),
+      read: (d.read as boolean) || false,
+      createdAt: (d.createdAt as Date).toISOString(),
+    }));
+  }, 30_000);
 })
 
 export const getUnreadCount = cache(async function getUnreadCount(): Promise<number> {
@@ -497,4 +517,3 @@ export const getUnreadCount = cache(async function getUnreadCount(): Promise<num
 
   return NotificationModel.countDocuments({ toUser: session.user.id, read: false });
 })
-

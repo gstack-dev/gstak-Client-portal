@@ -4,9 +4,38 @@ import { defaultLocale, isValidLocale } from "@/lib/i18n";
 
 const COOKIE_NAME = "NEXT_LOCALE";
 
+const CSP_DIRECTIVES = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "img-src 'self' data: blob: https://lh3.googleusercontent.com https://*.blob.vercel-storage.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  "connect-src 'self' https://*.blob.vercel-storage.com",
+  "frame-src https://accounts.google.com",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+];
+
+function addSecurityHeaders(response: NextResponse): void {
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("X-XSS-Protection", "1; mode=block");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(), interest-cohort=()"
+  );
+  response.headers.set("Content-Security-Policy", CSP_DIRECTIVES.join("; "));
+  response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload");
+}
+
 export default auth((req) => {
   const { pathname } = req.nextUrl;
   const isLoggedIn = !!req.auth;
+
+  const response = NextResponse.next();
+  addSecurityHeaders(response);
 
   // --- Locale detection ---
   if (!req.cookies.has(COOKIE_NAME)) {
@@ -18,7 +47,6 @@ export default auth((req) => {
     const locale =
       preferred && isValidLocale(preferred) ? preferred : defaultLocale;
 
-    const response = NextResponse.next();
     response.cookies.set(COOKIE_NAME, locale, {
       path: "/",
       maxAge: 365 * 24 * 60 * 60,
@@ -29,7 +57,6 @@ export default auth((req) => {
 
   const localeCookie = req.cookies.get(COOKIE_NAME)?.value;
   if (localeCookie && !isValidLocale(localeCookie)) {
-    const response = NextResponse.next();
     response.cookies.set(COOKIE_NAME, defaultLocale, {
       path: "/",
       maxAge: 365 * 24 * 60 * 60,
@@ -43,14 +70,15 @@ export default auth((req) => {
     pathname.startsWith("/dashboard") || pathname.startsWith("/admin");
 
   if (isProtectedRoute && !isLoggedIn) {
-    return Response.redirect(new URL("/login", req.nextUrl));
+    const loginUrl = new URL("/login", req.nextUrl);
+    return NextResponse.redirect(loginUrl);
   }
 
   if (pathname.startsWith("/login") && isLoggedIn) {
     if (req.auth?.user?.role === "admin") {
-      return Response.redirect(new URL("/admin", req.nextUrl));
+      return NextResponse.redirect(new URL("/admin", req.nextUrl));
     }
-    return Response.redirect(new URL("/dashboard", req.nextUrl));
+    return NextResponse.redirect(new URL("/dashboard", req.nextUrl));
   }
 
   if (
@@ -58,7 +86,7 @@ export default auth((req) => {
     isLoggedIn &&
     req.auth?.user?.role === "client"
   ) {
-    return Response.redirect(new URL("/dashboard", req.nextUrl));
+    return NextResponse.redirect(new URL("/dashboard", req.nextUrl));
   }
 
   if (
@@ -66,12 +94,12 @@ export default auth((req) => {
     isLoggedIn &&
     req.auth?.user?.role === "admin"
   ) {
-    return Response.redirect(new URL("/admin", req.nextUrl));
+    return NextResponse.redirect(new URL("/admin", req.nextUrl));
   }
 
-  return;
+  return response;
 });
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
 };

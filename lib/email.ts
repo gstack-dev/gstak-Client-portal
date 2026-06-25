@@ -1,6 +1,6 @@
 import nodemailer from "nodemailer";
+import { withRetry } from "@/lib/graceful";
 
-// Create the email transporter using Gmail
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -28,7 +28,7 @@ function emailStyles() {
 
 export async function sendWelcomeEmail(email: string, password: string) {
   try {
-    const info = await transporter.sendMail({
+    const info = await withRetry(() => transporter.sendMail({
       from: `"G-Stack Portal" <${process.env.GMAIL_USER}>`, 
       to: email,
       subject: "Welcome to G-Stack Portal",
@@ -52,7 +52,7 @@ export async function sendWelcomeEmail(email: string, password: string) {
           </div>
         </body></html>
       `,
-    });
+    }), 2, "email.sendWelcomeEmail");
 
     console.log("✅ Welcome Email sent successfully:", info.messageId);
     return { success: true };
@@ -67,7 +67,7 @@ export async function sendResetEmail(email: string, resetToken: string) {
   const resetUrl = `${baseUrl}/login/reset?token=${resetToken}`;
   
   try {
-    const info = await transporter.sendMail({
+    const info = await withRetry(() => transporter.sendMail({
       from: `"G-Stack Portal" <${process.env.GMAIL_USER}>`,
       to: email,
       subject: "Action Required: Reset Your G-Stack Portal Password",
@@ -89,7 +89,7 @@ export async function sendResetEmail(email: string, resetToken: string) {
           </div>
         </body></html>
       `,
-    });
+    }), 2, "email.sendResetEmail");
 
     console.log("✅ Reset Email sent successfully:", info.messageId);
     return { success: true };
@@ -108,7 +108,7 @@ export async function sendStatusChangeEmail(
   newStatus: string
 ) {
   try {
-    const info = await transporter.sendMail({
+    const info = await withRetry(() => transporter.sendMail({
       from: `"G-Stack Portal" <${process.env.GMAIL_USER}>`,
       to: clientEmail,
       subject: `Project Status Updated: ${projectTitle}`,
@@ -133,7 +133,7 @@ export async function sendStatusChangeEmail(
           </div>
         </body></html>
       `,
-    });
+    }), 2, "email.sendStatusChangeEmail");
 
     console.log("✅ Status Change Email sent successfully:", info.messageId);
     return { success: true };
@@ -151,7 +151,7 @@ export async function sendFileUploadEmail(
   uploaderName: string
 ) {
   try {
-    const info = await transporter.sendMail({
+    const info = await withRetry(() => transporter.sendMail({
       from: `"G-Stack Portal" <${process.env.GMAIL_USER}>`,
       to: clientEmail,
       subject: `New File Uploaded: ${fileName}`,
@@ -175,7 +175,7 @@ export async function sendFileUploadEmail(
           </div>
         </body></html>
       `,
-    });
+    }), 2, "email.sendFileUploadEmail");
 
     console.log("✅ File Upload Email sent successfully:", info.messageId);
     return { success: true };
@@ -193,7 +193,7 @@ export async function sendInvoiceCreatedEmail(
   dueDate: string
 ) {
   try {
-    const info = await transporter.sendMail({
+    const info = await withRetry(() => transporter.sendMail({
       from: `"G-Stack Portal" <${process.env.GMAIL_USER}>`,
       to: clientEmail,
       subject: `New Invoice: ${invoiceTitle}`,
@@ -218,7 +218,7 @@ export async function sendInvoiceCreatedEmail(
           </div>
         </body></html>
       `,
-    });
+    }), 2, "email.sendInvoiceCreatedEmail");
 
     console.log("✅ Invoice Email sent successfully:", info.messageId);
     return { success: true };

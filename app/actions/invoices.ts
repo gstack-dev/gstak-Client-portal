@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { connectMongoDB } from "@/lib/mongodb";
 import { rateLimitAction } from "@/lib/rate-limiter";
+import { withCache } from "@/lib/cache";
+import { recordAuditEvent } from "@/lib/audit";
 import InvoiceModel from "@/models/Invoice";
 import User from "@/models/User";
 import NotificationModel from "@/models/Notification";
@@ -49,24 +51,26 @@ export const getClientInvoices = cache(async function getClientInvoices(): Promi
   const session = await auth();
   if (!session?.user?.id) return [];
 
-  await connectMongoDB();
+  return withCache(`invoices:client:${session.user.id}`, async () => {
+    await connectMongoDB();
 
-  const docs = await InvoiceModel.find({ clientId: session.user.id })
-    .sort({ createdAt: -1 })
-    .limit(200)
-    .lean();
+    const docs = await InvoiceModel.find({ clientId: session.user.id })
+      .sort({ createdAt: -1 })
+      .limit(200)
+      .lean();
 
-  return docs.map((d) => ({
-    id: String(d._id),
-    projectId: d.projectId ? String(d.projectId) : undefined,
-    title: d.title as string,
-    description: (d.description as string) || "",
-    amount: d.amount as number,
-    status: d.status as ClientInvoiceData["status"],
-    dueDate: (d.dueDate as Date).toISOString(),
-    paidAt: d.paidAt ? (d.paidAt as Date).toISOString() : null,
-    createdAt: (d.createdAt as Date).toISOString(),
-  }));
+    return docs.map((d) => ({
+      id: String(d._id),
+      projectId: d.projectId ? String(d.projectId) : undefined,
+      title: d.title as string,
+      description: (d.description as string) || "",
+      amount: d.amount as number,
+      status: d.status as ClientInvoiceData["status"],
+      dueDate: (d.dueDate as Date).toISOString(),
+      paidAt: d.paidAt ? (d.paidAt as Date).toISOString() : null,
+      createdAt: (d.createdAt as Date).toISOString(),
+    }));
+  }, 30_000);
 })
 
 export const getClientInvoiceStats = cache(async function getClientInvoiceStats(): Promise<InvoiceStats> {
@@ -75,68 +79,72 @@ export const getClientInvoiceStats = cache(async function getClientInvoiceStats(
     return { totalPaid: 0, totalPending: 0, totalOverdue: 0, paidCount: 0, pendingCount: 0, overdueCount: 0, nextDue: null, nextDueId: null };
   }
 
-  await connectMongoDB();
+  return withCache(`invoiceStats:client:${session.user.id}`, async () => {
+    await connectMongoDB();
 
-  const [paidAgg, pendingAgg, overdueAgg, nextDueDoc] = await Promise.all([
-    InvoiceModel.aggregate<{ total: number; count: number }>([
-      { $match: { clientId: session.user.id, status: "paid" } },
-      { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
-    ]),
-    InvoiceModel.aggregate<{ total: number; count: number }>([
-      { $match: { clientId: session.user.id, status: "pending" } },
-      { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
-    ]),
-    InvoiceModel.aggregate<{ total: number; count: number }>([
-      { $match: { clientId: session.user.id, status: "overdue" } },
-      { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
-    ]),
-    InvoiceModel.findOne({ clientId: session.user.id, status: { $in: ["pending", "overdue"] } })
-      .sort({ dueDate: 1 })
-      .select("dueDate _id")
-      .lean(),
-  ]);
+    const [paidAgg, pendingAgg, overdueAgg, nextDueDoc] = await Promise.all([
+      InvoiceModel.aggregate<{ total: number; count: number }>([
+        { $match: { clientId: session.user.id, status: "paid" } },
+        { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
+      ]),
+      InvoiceModel.aggregate<{ total: number; count: number }>([
+        { $match: { clientId: session.user.id, status: "pending" } },
+        { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
+      ]),
+      InvoiceModel.aggregate<{ total: number; count: number }>([
+        { $match: { clientId: session.user.id, status: "overdue" } },
+        { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
+      ]),
+      InvoiceModel.findOne({ clientId: session.user.id, status: { $in: ["pending", "overdue"] } })
+        .sort({ dueDate: 1 })
+        .select("dueDate _id")
+        .lean(),
+    ]);
 
-  return {
-    totalPaid: paidAgg[0]?.total ?? 0,
-    totalPending: pendingAgg[0]?.total ?? 0,
-    totalOverdue: overdueAgg[0]?.total ?? 0,
-    paidCount: paidAgg[0]?.count ?? 0,
-    pendingCount: pendingAgg[0]?.count ?? 0,
-    overdueCount: overdueAgg[0]?.count ?? 0,
-    nextDue: nextDueDoc ? (nextDueDoc.dueDate as Date).toISOString() : null,
-    nextDueId: nextDueDoc ? String(nextDueDoc._id) : null,
-  };
+    return {
+      totalPaid: paidAgg[0]?.total ?? 0,
+      totalPending: pendingAgg[0]?.total ?? 0,
+      totalOverdue: overdueAgg[0]?.total ?? 0,
+      paidCount: paidAgg[0]?.count ?? 0,
+      pendingCount: pendingAgg[0]?.count ?? 0,
+      overdueCount: overdueAgg[0]?.count ?? 0,
+      nextDue: nextDueDoc ? (nextDueDoc.dueDate as Date).toISOString() : null,
+      nextDueId: nextDueDoc ? String(nextDueDoc._id) : null,
+    };
+  }, 30_000);
 })
 
 export const getAdminInvoices = cache(async function getAdminInvoices(): Promise<AdminInvoiceData[]> {
   const session = await auth();
   if (!session?.user?.id || session.user.role !== "admin") return [];
 
-  await connectMongoDB();
+  return withCache("invoices:admin", async () => {
+    await connectMongoDB();
 
-  const docs = await InvoiceModel.find()
-    .sort({ createdAt: -1 })
-    .limit(500)
-    .lean();
+    const docs = await InvoiceModel.find()
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .lean();
 
-  const clientIds = [...new Set(docs.map((d) => String(d.clientId)))];
-  const clients = await User.find({ _id: { $in: clientIds } }).select("name").lean();
-  const nameMap: Record<string, string> = {};
-  for (const c of clients) nameMap[String(c._id)] = (c.name as string) || "Unknown";
+    const clientIds = [...new Set(docs.map((d) => String(d.clientId)))];
+    const clients = await User.find({ _id: { $in: clientIds } }).select("name").lean();
+    const nameMap: Record<string, string> = {};
+    for (const c of clients) nameMap[String(c._id)] = (c.name as string) || "Unknown";
 
-  return docs.map((d) => ({
-    id: String(d._id),
-    clientId: String(d.clientId),
-    clientName: nameMap[String(d.clientId)] || "Unknown",
-    projectId: d.projectId ? String(d.projectId) : undefined,
-    title: d.title as string,
-    description: (d.description as string) || "",
-    amount: d.amount as number,
-    status: d.status as AdminInvoiceData["status"],
-    dueDate: (d.dueDate as Date).toISOString(),
-    paidAt: d.paidAt ? (d.paidAt as Date).toISOString() : null,
-    createdAt: (d.createdAt as Date).toISOString(),
-  }));
+    return docs.map((d) => ({
+      id: String(d._id),
+      clientId: String(d.clientId),
+      clientName: nameMap[String(d.clientId)] || "Unknown",
+      projectId: d.projectId ? String(d.projectId) : undefined,
+      title: d.title as string,
+      description: (d.description as string) || "",
+      amount: d.amount as number,
+      status: d.status as AdminInvoiceData["status"],
+      dueDate: (d.dueDate as Date).toISOString(),
+      paidAt: d.paidAt ? (d.paidAt as Date).toISOString() : null,
+      createdAt: (d.createdAt as Date).toISOString(),
+    }));
+  }, 30_000);
 })
 
 export const getAdminInvoiceStats = cache(async function getAdminInvoiceStats() {
@@ -145,31 +153,33 @@ export const getAdminInvoiceStats = cache(async function getAdminInvoiceStats() 
     return { totalCollected: 0, totalPending: 0, totalOverdue: 0, collectedCount: 0, pendingCount: 0, overdueCount: 0 };
   }
 
-  await connectMongoDB();
+  return withCache("invoiceStats:admin", async () => {
+    await connectMongoDB();
 
-  const [collectedAgg, pendingAgg, overdueAgg] = await Promise.all([
-    InvoiceModel.aggregate<{ total: number; count: number }>([
-      { $match: { status: "paid" } },
-      { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
-    ]),
-    InvoiceModel.aggregate<{ total: number; count: number }>([
-      { $match: { status: "pending" } },
-      { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
-    ]),
-    InvoiceModel.aggregate<{ total: number; count: number }>([
-      { $match: { status: "overdue" } },
-      { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
-    ]),
-  ]);
+    const [collectedAgg, pendingAgg, overdueAgg] = await Promise.all([
+      InvoiceModel.aggregate<{ total: number; count: number }>([
+        { $match: { status: "paid" } },
+        { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
+      ]),
+      InvoiceModel.aggregate<{ total: number; count: number }>([
+        { $match: { status: "pending" } },
+        { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
+      ]),
+      InvoiceModel.aggregate<{ total: number; count: number }>([
+        { $match: { status: "overdue" } },
+        { $group: { _id: null, total: { $sum: "$amount" }, count: { $sum: 1 } } },
+      ]),
+    ]);
 
-  return {
-    totalCollected: collectedAgg[0]?.total ?? 0,
-    totalPending: pendingAgg[0]?.total ?? 0,
-    totalOverdue: overdueAgg[0]?.total ?? 0,
-    collectedCount: collectedAgg[0]?.count ?? 0,
-    pendingCount: pendingAgg[0]?.count ?? 0,
-    overdueCount: overdueAgg[0]?.count ?? 0,
-  };
+    return {
+      totalCollected: collectedAgg[0]?.total ?? 0,
+      totalPending: pendingAgg[0]?.total ?? 0,
+      totalOverdue: overdueAgg[0]?.total ?? 0,
+      collectedCount: collectedAgg[0]?.count ?? 0,
+      pendingCount: pendingAgg[0]?.count ?? 0,
+      overdueCount: overdueAgg[0]?.count ?? 0,
+    };
+  }, 30_000);
 })
 
 export async function createInvoice(formData: FormData) {
@@ -209,6 +219,8 @@ export async function createInvoice(formData: FormData) {
     status: "pending",
   });
 
+  recordAuditEvent({ action: "invoice.create", userId: session.user.id, role: "admin" });
+
   const formattedAmount = `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   await NotificationModel.create({
@@ -218,12 +230,11 @@ export async function createInvoice(formData: FormData) {
     toUser: clientId,
   });
 
-  // ── Send email ──
   const client = await User.findById(clientId).select("name email").lean();
-  if (client && (client as any).email) {
+  if (client && client.email) {
     sendInvoiceCreatedEmail(
-      (client as any).email,
-      (client as any).name || "Client",
+      client.email,
+      client.name || "Client",
       title.trim(),
       amount,
       dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -254,13 +265,15 @@ export async function payInvoice(invoiceId: string) {
   invoice.paidAt = new Date();
   await invoice.save();
 
+  recordAuditEvent({ action: "invoice.pay", userId: session.user.id, role: session.user.role, metadata: { invoiceId } });
+
   const admin = await User.findOne({ role: "admin" }).select("_id").lean();
   if (admin) {
     const formattedAmount = `$${invoice.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     const client = await User.findById(session.user.id).select("name").lean();
     await NotificationModel.create({
       type: "invoice_paid",
-      message: `${(client?.name as string) || "A client"} paid invoice "${invoice.title}" — ${formattedAmount}`,
+      message: `${client?.name || "A client"} paid invoice "${invoice.title}" — ${formattedAmount}`,
       fromUser: session.user.id,
       toUser: String(admin._id),
     });
@@ -308,6 +321,8 @@ export async function updateInvoice(formData: FormData) {
     },
   });
 
+  recordAuditEvent({ action: "invoice.update", userId: session.user.id, role: "admin", metadata: { invoiceId } });
+
   revalidatePath("/admin/invoices");
   revalidatePath("/admin");
   revalidatePath("/dashboard/invoices");
@@ -324,6 +339,8 @@ export async function deleteInvoice(invoiceId: string) {
   await connectMongoDB();
 
   await InvoiceModel.findByIdAndDelete(invoiceId);
+
+  recordAuditEvent({ action: "invoice.delete", userId: session.user.id, role: "admin", metadata: { invoiceId } });
 
   revalidatePath("/admin/invoices");
   revalidatePath("/admin");
@@ -346,6 +363,8 @@ export async function markInvoiceAsPaid(invoiceId: string) {
   invoice.status = "paid";
   invoice.paidAt = new Date();
   await invoice.save();
+
+  recordAuditEvent({ action: "invoice.mark_paid", userId: session.user.id, role: "admin", metadata: { invoiceId } });
 
   const client = await User.findById(invoice.clientId).select("name").lean();
   if (client) {
@@ -370,25 +389,27 @@ export const getRevenueByClient = cache(async function getRevenueByClient(): Pro
   const session = await auth();
   if (!session?.user?.id) return [];
 
-  await connectMongoDB();
+  return withCache("revenue:byClient", async () => {
+    await connectMongoDB();
 
-  const revenueAgg = await InvoiceModel.aggregate<{ _id: string; revenue: number; invoiceCount: number }>([
-    { $match: { status: "paid" } },
-    { $group: { _id: "$clientId", revenue: { $sum: "$amount" }, invoiceCount: { $sum: 1 } } },
-    { $sort: { revenue: -1 } },
-  ]);
+    const revenueAgg = await InvoiceModel.aggregate<{ _id: string; revenue: number; invoiceCount: number }>([
+      { $match: { status: "paid" } },
+      { $group: { _id: "$clientId", revenue: { $sum: "$amount" }, invoiceCount: { $sum: 1 } } },
+      { $sort: { revenue: -1 } },
+    ]);
 
-  const clientIds = revenueAgg.map((r) => r._id);
-  const clients = await User.find({ _id: { $in: clientIds } }).select("name").lean();
-  const nameMap: Record<string, string> = {};
-  for (const c of clients) nameMap[String(c._id)] = (c.name as string) || "Unknown";
+    const clientIds = revenueAgg.map((r) => r._id);
+    const clients = await User.find({ _id: { $in: clientIds } }).select("name").lean();
+    const nameMap: Record<string, string> = {};
+    for (const c of clients) nameMap[String(c._id)] = (c.name as string) || "Unknown";
 
-  return revenueAgg.map((r) => ({
-    clientId: r._id,
-    clientName: nameMap[r._id] || "Unknown",
-    revenue: r.revenue,
-    invoiceCount: r.invoiceCount,
-  }));
+    return revenueAgg.map((r) => ({
+      clientId: r._id,
+      clientName: nameMap[r._id] || "Unknown",
+      revenue: r.revenue,
+      invoiceCount: r.invoiceCount,
+    }));
+  }, 60_000);
 })
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -402,23 +423,25 @@ export const getMonthlyRevenue = cache(async function getMonthlyRevenue(): Promi
   const session = await auth();
   if (!session?.user?.id) return MONTHS.map((m) => ({ month: m, value: 0 }));
 
-  await connectMongoDB();
+  return withCache("revenue:monthly", async () => {
+    await connectMongoDB();
 
-  const revenueAgg = await InvoiceModel.aggregate<{ _id: number; value: number }>([
-    { $match: { status: "paid", paidAt: { $exists: true } } },
-    { $group: { _id: { $month: "$paidAt" }, value: { $sum: "$amount" } } },
-    { $sort: { _id: 1 } },
-  ]);
+    const revenueAgg = await InvoiceModel.aggregate<{ _id: number; value: number }>([
+      { $match: { status: "paid", paidAt: { $exists: true } } },
+      { $group: { _id: { $month: "$paidAt" }, value: { $sum: "$amount" } } },
+      { $sort: { _id: 1 } },
+    ]);
 
-  const revenueMap: Record<number, number> = {};
-  for (const r of revenueAgg) {
-    revenueMap[r._id] = (revenueMap[r._id] || 0) + r.value;
-  }
+    const revenueMap: Record<number, number> = {};
+    for (const r of revenueAgg) {
+      revenueMap[r._id] = (revenueMap[r._id] || 0) + r.value;
+    }
 
-  return MONTHS.map((month, i) => ({
-    month,
-    value: revenueMap[i + 1] || 0,
-  }));
+    return MONTHS.map((month, i) => ({
+      month,
+      value: revenueMap[i + 1] || 0,
+    }));
+  }, 60_000);
 })
 
 export const getProjectInvoices = cache(async function getProjectInvoices(projectId: string): Promise<ClientInvoiceData[]> {
@@ -427,23 +450,25 @@ export const getProjectInvoices = cache(async function getProjectInvoices(projec
 
   if (!/^[0-9a-fA-F]{24}$/.test(projectId)) return [];
 
-  await connectMongoDB();
+  return withCache(`invoices:project:${projectId}`, async () => {
+    await connectMongoDB();
 
-  const docs = await InvoiceModel.find({ projectId, clientId: session.user.id })
-    .sort({ createdAt: -1 })
-    .lean();
+    const docs = await InvoiceModel.find({ projectId, clientId: session.user.id })
+      .sort({ createdAt: -1 })
+      .lean();
 
-  return docs.map((d) => ({
-    id: String(d._id),
-    projectId: d.projectId ? String(d.projectId) : undefined,
-    title: d.title as string,
-    description: (d.description as string) || "",
-    amount: d.amount as number,
-    status: d.status as ClientInvoiceData["status"],
-    dueDate: (d.dueDate as Date).toISOString(),
-    paidAt: d.paidAt ? (d.paidAt as Date).toISOString() : null,
-    createdAt: (d.createdAt as Date).toISOString(),
-  }));
+    return docs.map((d) => ({
+      id: String(d._id),
+      projectId: d.projectId ? String(d.projectId) : undefined,
+      title: d.title as string,
+      description: (d.description as string) || "",
+      amount: d.amount as number,
+      status: d.status as ClientInvoiceData["status"],
+      dueDate: (d.dueDate as Date).toISOString(),
+      paidAt: d.paidAt ? (d.paidAt as Date).toISOString() : null,
+      createdAt: (d.createdAt as Date).toISOString(),
+    }));
+  }, 30_000);
 })
 
 export const areProjectInvoicesPaid = cache(async function areProjectInvoicesPaid(projectId: string): Promise<boolean> {
@@ -452,13 +477,15 @@ export const areProjectInvoicesPaid = cache(async function areProjectInvoicesPai
 
   if (!/^[0-9a-fA-F]{24}$/.test(projectId)) return true;
 
-  await connectMongoDB();
+  return withCache(`invoices:paid:${projectId}`, async () => {
+    await connectMongoDB();
 
-  const unpaid = await InvoiceModel.countDocuments({
-    projectId,
-    clientId: session.user.id,
-    status: { $in: ["pending", "overdue"] },
-  });
+    const unpaid = await InvoiceModel.countDocuments({
+      projectId,
+      clientId: session.user.id,
+      status: { $in: ["pending", "overdue"] },
+    });
 
-  return unpaid === 0;
+    return unpaid === 0;
+  }, 30_000);
 })

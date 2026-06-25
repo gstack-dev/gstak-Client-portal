@@ -25,9 +25,11 @@ const userSchema = new mongoose.Schema({
     },
     company: { type: String, required: false },
     phone: { type: String, required: false },
+    passwordChangedAt: { type: Date, required: false },
 }, { timestamps: true });
 
 userSchema.index({ email: 1 }, { unique: true });
-userSchema.index({ role: 1 });
+userSchema.index({ role: 1, createdAt: -1 });
+userSchema.index({ role: 1, name: 1 });
 
 export default mongoose.models.User || mongoose.model("User", userSchema);

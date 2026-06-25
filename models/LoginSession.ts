@@ -11,5 +11,6 @@ const loginSessionSchema = new mongoose.Schema({
 
 loginSessionSchema.index({ userId: 1, lastActiveAt: -1 });
 loginSessionSchema.index({ userId: 1, loggedInAt: -1 });
+loginSessionSchema.index({ userId: 1, device: 1, loggedInAt: -1 });
 
 export default mongoose.models.LoginSession || mongoose.model("LoginSession", loginSessionSchema);

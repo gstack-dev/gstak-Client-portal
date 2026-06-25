@@ -3,6 +3,7 @@ import { get } from "@vercel/blob";
 import { auth } from "@/auth";
 import { connectMongoDB } from "@/lib/mongodb";
 import { rateLimitRoute } from "@/lib/rate-limiter";
+import { withFallback } from "@/lib/graceful";
 import FileModel from "@/models/File";
 import ProjectModel from "@/models/Project";
 
@@ -44,34 +45,31 @@ export async function GET(
 
   const blobUrl = fileDoc.fileName as string;
 
-  try {
-    const result = await get(blobUrl, { access: "private" });
+  const result = await withFallback(
+    () => get(blobUrl, { access: "private" }),
+    null,
+    "blob.get"
+  );
 
-    if (!result || result.statusCode !== 200) {
-      return NextResponse.json({ error: "Blob not found" }, { status: 404 });
-    }
-
-    const contentType = result.blob.contentType || "application/octet-stream";
-    const originalName = (fileDoc.originalName as string) || "file";
-    const downloadParam = _req.nextUrl.searchParams.get("download");
-
-    const headers: Record<string, string> = {
-      "Content-Type": contentType,
-      "Content-Length": String(result.blob.size),
-      "Cache-Control": "private, max-age=3600",
-    };
-
-    if (downloadParam !== null) {
-      headers["Content-Disposition"] = `attachment; filename="${originalName}"`;
-    } else {
-      headers["Content-Disposition"] = `inline; filename="${originalName}"`;
-    }
-
-    return new NextResponse(result.stream, { headers });
-  } catch {
-    return NextResponse.json(
-      { error: "Failed to retrieve blob" },
-      { status: 500 }
-    );
+  if (!result || result.statusCode !== 200) {
+    return NextResponse.json({ error: "Blob not found" }, { status: 404 });
   }
+
+  const contentType = result.blob.contentType || "application/octet-stream";
+  const originalName = (fileDoc.originalName as string) || "file";
+  const downloadParam = _req.nextUrl.searchParams.get("download");
+
+  const headers: Record<string, string> = {
+    "Content-Type": contentType,
+    "Content-Length": String(result.blob.size),
+    "Cache-Control": "private, max-age=3600",
+  };
+
+  if (downloadParam !== null) {
+    headers["Content-Disposition"] = `attachment; filename="${originalName}"`;
+  } else {
+    headers["Content-Disposition"] = `inline; filename="${originalName}"`;
+  }
+
+  return new NextResponse(result.stream, { headers });
 }

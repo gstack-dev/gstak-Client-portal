@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs"
 import { connectMongoDB } from "@/lib/mongodb"
 import { rateLimit } from "@/lib/rate-limiter"
 import User from "@/models/User"
+import { recordAuditEvent } from "@/lib/audit"
 
 function getIPFromRequest(req: Request): string {
   return (
@@ -29,12 +30,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
                 return null;
             }
 
-            if (request) {
-              const ip = getIPFromRequest(request);
-              const result = await rateLimit(`login:${ip}`, 10, 60_000);
-              if (!result.allowed) {
+            const ip = request ? getIPFromRequest(request) : "unknown";
+
+            const limitResult = await rateLimit(`login:${ip}`, 10, 60_000);
+            if (!limitResult.allowed) {
+                recordAuditEvent({ action: "login.rate_limited", email: credentials.email as string, ip });
                 return null;
-              }
             }
 
             await connectMongoDB();
@@ -42,10 +43,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             const user = await User.findOne({ email: credentials.email });
 
             if (!user) {
+                recordAuditEvent({ action: "login.failure", email: credentials.email as string, ip, success: false, error: "User not found" });
                 return null;
             }
 
             if (!user.password) {
+                recordAuditEvent({ action: "login.failure", email: credentials.email as string, ip, success: false, error: "No password set" });
                 return null;
             }
 
@@ -55,15 +58,18 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             );
 
             if (!passwordsMatch) {
+                recordAuditEvent({ action: "login.failure", email: credentials.email as string, ip, success: false, error: "Wrong password" });
                 return null;
             }
+
+            recordAuditEvent({ action: "login.success", userId: user._id.toString(), email: user.email, role: user.role, ip });
 
             return {
                 id: user._id.toString(),
                 email: user.email,
                 role: user.role,
                 name: user.name,
-                isRememberMe: credentials.rememberMe === "true", 
+                isRememberMe: credentials.rememberMe === "true",
             };
         }
         })
@@ -76,7 +82,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         async signIn({ user, account }) {
         if (account?.provider === "google") {
             await connectMongoDB();
-            
+
             const existingUser = await User.findOne({ email: user.email });
 
             if (!existingUser) {
@@ -84,14 +90,10 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             }
             return true;
         }
-        return true; // Credentials provider returns true by default
+        return true;
         },
 
-        // 2. Attach the role + basic info to the JWT Token
-        // NOTE: image is NOT stored in JWT — base64 data URLs are too large for cookies.
-        // The client fetches the image separately via getProfile() server action.
         async jwt({ token, user }) {
-        // 'user' is only passed in on sign-in; on subsequent calls it's undefined
         if (user) {
             await connectMongoDB();
             const dbUser = await User.findOne({ email: user.email });
@@ -100,28 +102,42 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             token.email = dbUser?.email;
             token.id = dbUser?._id.toString();
 
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const isRememberMe = (user as any).isRememberMe;
-            if (isRememberMe === false) { 
-                // token.exp is in seconds since epoch
-                token.exp = Math.floor(Date.now() / 1000) + (24 * 60 * 60); 
+            if (isRememberMe === false) {
+                token.exp = Math.floor(Date.now() / 1000) + (24 * 60 * 60);
+            }
+
+            if (dbUser?.passwordChangedAt) {
+                token.passwordChangedAt = Math.floor(
+                    new Date(dbUser.passwordChangedAt as Date).getTime() / 1000
+                );
             }
         }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const pwa = (token as any).passwordChangedAt;
+        if (pwa && token.iat) {
+            if (token.iat < pwa) {
+                return { ...token, exp: Math.floor(Date.now() / 1000) - 1 };
+            }
+        }
+
         return token;
         },
 
-        // 3. Expose the role to the frontend session
         async session({ session, token }) {
         if (token?.role && session.user) {
             session.user.role = token.role as string;
             session.user.name = token.name as string;
             session.user.email = token.email as string;
             session.user.id = token.id as string;
-        }   
+        }
         return session;
         },
     },
     session: {
         strategy: "jwt",
-        maxAge: 30 * 24 * 60 * 60, // 30 Days
+        maxAge: 30 * 24 * 60 * 60,
     },
 })

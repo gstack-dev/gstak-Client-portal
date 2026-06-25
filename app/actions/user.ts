@@ -4,6 +4,7 @@ import { cache } from "react";
 import { auth } from "@/auth"; 
 import { connectMongoDB } from "@/lib/mongodb";
 import { rateLimitAction } from "@/lib/rate-limiter";
+import { recordAuditEvent } from "@/lib/audit";
 import User from "@/models/User";
 import ProjectModel from "@/models/Project";
 import FileModel from "@/models/File";
@@ -33,6 +34,7 @@ export async function updateProfile(prevState: { success: boolean } | null, form
   
   await connectMongoDB();
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updateFields: Record<string, any> = { name, company, phone };
   if (imageUrl) {
     updateFields.image = imageUrl;
@@ -198,7 +200,14 @@ export async function changePassword(prevState: { success: boolean; error?: stri
 
   const hashed = await bcrypt.hash(newPassword, 12);
   user.password = hashed;
+  user.passwordChangedAt = new Date();
   await user.save();
+
+  recordAuditEvent({
+    action: "password.change",
+    userId: session.user.id,
+    role: session.user.role,
+  });
 
   return { success: true };
 }

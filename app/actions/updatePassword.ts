@@ -4,6 +4,7 @@ import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { connectMongoDB } from "@/lib/mongodb";
 import { rateLimitAction } from "@/lib/rate-limiter";
+import { recordAuditEvent } from "@/lib/audit";
 import User from "@/models/User";
 
 export async function updatePassword(userId: string, newPasswordRaw: string, resetToken: string) {
@@ -39,8 +40,11 @@ export async function updatePassword(userId: string, newPasswordRaw: string, res
         user.password = hashedPassword;
         user.resetPasswordToken = undefined;
         user.resetPasswordExpires = undefined;
+        user.passwordChangedAt = new Date();
 
         await user.save();
+
+        recordAuditEvent({ action: "password.reset", userId });
 
         return { success: true };
     } catch (error) {
