@@ -31,3 +31,15 @@ export function getDir(locale: Locale): "ltr" | "rtl" {
 }
 
 export type Dictionary = Awaited<ReturnType<typeof getDictionary>>;
+
+export function createT(dict: Dictionary) {
+  return (key: string, params?: Record<string, string | number>) => {
+    const val = key.split(".").reduce((acc: unknown, part) => {
+      if (acc && typeof acc === "object") return (acc as Record<string, unknown>)[part];
+      return undefined;
+    }, dict as unknown as Record<string, unknown>);
+    if (typeof val !== "string") return key;
+    if (!params) return val;
+    return Object.entries(params).reduce((s, [k, v]) => s.replace(`{${k}}`, String(v)), val);
+  };
+}

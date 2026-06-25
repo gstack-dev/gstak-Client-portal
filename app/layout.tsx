@@ -3,14 +3,7 @@ import { Plus_Jakarta_Sans, Inter } from "next/font/google";
 import "@/app/globals.css";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { LanguageProvider } from "@/components/LanguageProvider";
-import { cookies } from "next/headers";
-import {
-  isValidLocale,
-  getDictionary,
-  getDir,
-  defaultLocale,
-  type Locale,
-} from "@/lib/i18n";
+
 import { siteConfig } from "@/lib/config/site";
 
 const plusJakartaSans = Plus_Jakarta_Sans({
@@ -110,16 +103,10 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const cookieStore = await cookies();
-  const localeRaw = cookieStore.get("NEXT_LOCALE")?.value ?? defaultLocale;
-  const locale: Locale = isValidLocale(localeRaw) ? localeRaw : defaultLocale;
-  const dictionary = await getDictionary(locale);
-  const dir = getDir(locale);
-
   return (
     <html
-      lang={locale}
-      dir={dir}
+      lang="en"
+      dir="ltr"
       className="scroll-smooth"
       suppressHydrationWarning
     >
@@ -133,7 +120,7 @@ export default async function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <LanguageProvider dictionary={dictionary}>
+          <LanguageProvider>
             {children}
           </LanguageProvider>
         </ThemeProvider>

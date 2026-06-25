@@ -1,7 +1,9 @@
 "use server";
 
+import { cache } from "react";
 import { auth } from "@/auth";
 import { connectMongoDB } from "@/lib/mongodb";
+import { rateLimitAction } from "@/lib/rate-limiter";
 import { sendWelcomeEmail, sendStatusChangeEmail } from "@/lib/email";
 import bcrypt from "bcryptjs";
 import User from "@/models/User";
@@ -15,39 +17,15 @@ import type { ClientFormValues } from "@/schema/client";
 import type { ProjectFormValues } from "@/schema/project";
 import type { Client, ClientProject } from "@/types";
 
-async function mapUserToClient(doc: Record<string, unknown>): Promise<Client> {
-    const clientId = String(doc._id);
-    const userProjects = await ProjectModel.find({ clientId: doc._id }).lean();
-
-    return {
-        id: clientId,
-        name: doc.name as string,
-        email: doc.email as string,
-        password: "",
-        role: "user",
-        client_type: ((doc.clientType as string)?.toLowerCase() ?? "starter") as Client["client_type"],
-        image: (doc.image as string) ?? null,
-        projects: userProjects.map((p) => ({
-            id: String(p._id),
-            title: p.title as string,
-            description: p.description as string | undefined,
-            status: p.status as ClientProject["status"],
-            progressPercentage: p.progressPercentage as number,
-            deadline: p.deadLine
-                ? new Date(p.deadLine as string).toISOString().split("T")[0]
-                : "",
-            clientId,
-        })),
-        since: doc.createdAt
-            ? new Date(doc.createdAt as string).toLocaleDateString("en-US", { month: "short", year: "numeric" })
-            : "",
-    };
-}
-
 export async function createClient(
     client: ClientFormValues,
     projects: ProjectFormValues[]
 ){
+    await rateLimitAction("createClient", 5, 60_000);
+    const session = await auth();
+    if (!session?.user?.id || session.user.role !== "admin") {
+        return { error: "Unauthorized", success: false };
+    }
     await connectMongoDB();
     try {
         const isUser = await User.findOne({email: client.email});
@@ -89,14 +67,60 @@ export async function createClient(
     }
 }
 
-export async function getClients() {
+export const getClients = cache(async function getClients() {
+    const session = await auth();
+    if (!session?.user?.id || session.user.role !== "admin") {
+        return { clients: [] };
+    }
     await connectMongoDB();
-    const docs = await User.find({role: "user"}).lean();
-    const clients = await Promise.all(docs.map((d) => mapUserToClient(d as Record<string, unknown>)));
+    const docs = await User.aggregate([
+        { $match: { role: "user" } },
+        {
+            $lookup: {
+                from: "projects",
+                localField: "_id",
+                foreignField: "clientId",
+                as: "projects",
+            },
+        },
+        {
+            $addFields: {
+                projectCount: { $size: "$projects" },
+            },
+        },
+        { $sort: { createdAt: -1 } },
+    ]);
+    const clients: Client[] = docs.map((doc) => ({
+        id: String(doc._id),
+        name: doc.name as string,
+        email: doc.email as string,
+        password: "",
+        role: "user",
+        client_type: ((doc.clientType as string)?.toLowerCase() ?? "starter") as Client["client_type"],
+        image: (doc.image as string) ?? null,
+        projects: (doc.projects as any[]).map((p: any) => ({
+            id: String(p._id),
+            title: p.title as string,
+            description: p.description as string | undefined,
+            status: p.status as ClientProject["status"],
+            progressPercentage: p.progressPercentage as number,
+            deadline: p.deadLine
+                ? new Date(p.deadLine as string).toISOString().split("T")[0]
+                : "",
+            clientId: String(doc._id),
+        })),
+        since: doc.createdAt
+            ? new Date(doc.createdAt as string).toLocaleDateString("en-US", { month: "short", year: "numeric" })
+            : "",
+    }));
     return { clients };
-}
+})
 
 export async function deleteClient(clientId: string) {
+    const session = await auth();
+    if (!session?.user?.id || session.user.role !== "admin") {
+        return { error: "Unauthorized", success: false };
+    }
     await connectMongoDB();
     try {
         await User.deleteOne({ _id: clientId });
@@ -118,9 +142,12 @@ export async function deleteClient(clientId: string) {
 }
 
 export async function addProject(projects: ProjectFormValues[], clientId: string) {
+    const session = await auth();
+    if (!session?.user?.id || session.user.role !== "admin") {
+        return { error: "Unauthorized", success: false };
+    }
     await connectMongoDB();
     try {
-        const session = await auth();
 
         const projectDocs = projects
             .filter((p) => p.title.trim())
@@ -229,6 +256,10 @@ export async function updateProject(
 }
 
 export async function deleteProject(projectId: string) {
+    const session = await auth();
+    if (!session?.user?.id || session.user.role !== "admin") {
+        return { error: "Unauthorized", success: false };
+    }
     if (!/^[0-9a-fA-F]{24}$/.test(projectId)) return { error: "Invalid project ID", success: false };
     await connectMongoDB();
     try {

@@ -2,19 +2,22 @@
 
 import crypto from "crypto";
 import { connectMongoDB } from "@/lib/mongodb";
+import { rateLimitAction } from "@/lib/rate-limiter";
 import User from "@/models/User";
 import { sendResetEmail } from "@/lib/email";
 
 export async function generateResetToken(email: string) {
+    await rateLimitAction("generateResetToken", 5, 60_000);
     await connectMongoDB();
 
     const user = await User.findOne({ email });
 
-    // Security best practice: Even if the user doesn't exist, we return success 
-    // so hackers can't use this form to guess which emails are registered.
     if (!user) {
+        console.warn("Password reset requested for non-existent account");
         return { success: true };
     }
+
+    console.log("Password reset token generated");
 
     // 1. Generate a random, secure token
     const resetToken = crypto.randomBytes(32).toString("hex");

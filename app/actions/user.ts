@@ -1,7 +1,9 @@
 "use server";
 
+import { cache } from "react";
 import { auth } from "@/auth"; 
 import { connectMongoDB } from "@/lib/mongodb";
+import { rateLimitAction } from "@/lib/rate-limiter";
 import User from "@/models/User";
 import ProjectModel from "@/models/Project";
 import FileModel from "@/models/File";
@@ -49,7 +51,7 @@ export async function updateProfile(prevState: { success: boolean } | null, form
   return { success: true, name, image: imageUrl ?? null };
 }
 
-export async function getProfile() {
+export const getProfile = cache(async function getProfile() {
   const session = await auth();
   if (!session?.user?.id) return null;
 
@@ -65,9 +67,9 @@ export async function getProfile() {
     company: user.company as string | undefined,
     phone: user.phone as string | undefined,
   };
-}
+})
 
-export async function getUserProjects() {
+export const getUserProjects = cache(async function getUserProjects() {
   const session = await auth();
   if (!session?.user?.id) return [];
 
@@ -85,9 +87,9 @@ export async function getUserProjects() {
       : "",
     clientId: String(p.clientId),
   })) satisfies ClientProject[];
-}
+})
 
-export async function getUserProjectById(projectId: string) {
+export const getUserProjectById = cache(async function getUserProjectById(projectId: string) {
   const session = await auth();
   if (!session?.user?.id) return null;
 
@@ -121,7 +123,7 @@ export async function getUserProjectById(projectId: string) {
     clientEmail: user?.email as string ?? "",
     clientImage: user?.image as string | null ?? null,
   };
-}
+})
 
 export async function deleteUserProject(projectId: string) {
   const session = await auth();
@@ -162,6 +164,7 @@ export async function toggleProjectStatus(projectId: string) {
 }
 
 export async function changePassword(prevState: { success: boolean; error?: string } | null, formData: FormData) {
+  await rateLimitAction("changePassword", 5, 60_000);
   const session = await auth();
   if (!session?.user?.id) return { success: false, error: "Unauthorized" };
 
@@ -222,7 +225,7 @@ export async function logSession(device: string) {
   });
 }
 
-export async function getUserSessions() {
+export const getUserSessions = cache(async function getUserSessions() {
   const session = await auth();
   if (!session?.user?.id) return [];
 
@@ -247,7 +250,7 @@ export async function getUserSessions() {
     active: i === 0,
     time: i === 0 ? "Current session" : timeAgo(new Date(u.lastActive)),
   }));
-}
+})
 
 export interface SessionEntry {
   id: string;

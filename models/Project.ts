@@ -21,4 +21,7 @@ const projectSchema = new mongoose.Schema({
     }
 }, { timestamps: true });
 
+projectSchema.index({ clientId: 1 });
+projectSchema.index({ status: 1 });
+
 export default mongoose.models.Project || mongoose.model("Project", projectSchema);

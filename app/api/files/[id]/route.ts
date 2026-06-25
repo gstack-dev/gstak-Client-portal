@@ -2,16 +2,22 @@ import { NextRequest, NextResponse } from "next/server";
 import { get } from "@vercel/blob";
 import { auth } from "@/auth";
 import { connectMongoDB } from "@/lib/mongodb";
+import { rateLimitRoute } from "@/lib/rate-limiter";
 import FileModel from "@/models/File";
 import ProjectModel from "@/models/Project";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const limitResponse = await rateLimitRoute(req);
+  if (limitResponse) return limitResponse;
+
   const session = await auth();
   if (!session?.user?.id)
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const _req = req;
 
   const { id } = await params;
   if (!/^[0-9a-fA-F]{24}$/.test(id))

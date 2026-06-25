@@ -1,8 +1,10 @@
 "use server";
 
+import { cache } from "react";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { connectMongoDB } from "@/lib/mongodb";
+import { rateLimitAction } from "@/lib/rate-limiter";
 import MessageModel from "@/models/Message";
 import User from "@/models/User";
 
@@ -25,6 +27,9 @@ export interface ConversationData {
 }
 
 export async function sendMessage(formData: FormData) {
+  const limitResult = await rateLimitAction("sendMessage", 20, 60_000).catch(() => null);
+  if (!limitResult) return { error: "Too many requests. Please try again later." };
+
   const session = await auth();
   if (!session?.user?.id) return { error: "Unauthorized" };
 
@@ -47,16 +52,16 @@ export async function sendMessage(formData: FormData) {
   return { success: true };
 }
 
-export async function getUnreadMessageCount(): Promise<number> {
+export const getUnreadMessageCount = cache(async function getUnreadMessageCount(): Promise<number> {
   const session = await auth();
   if (!session?.user?.id) return 0;
 
   await connectMongoDB();
 
   return MessageModel.countDocuments({ receiverId: session.user.id, read: false });
-}
+})
 
-export async function getMessagesWithUser(otherUserId: string): Promise<MessageData[]> {
+export const getMessagesWithUser = cache(async function getMessagesWithUser(otherUserId: string): Promise<MessageData[]> {
   const session = await auth();
   if (!session?.user?.id) return [];
 
@@ -85,9 +90,9 @@ export async function getMessagesWithUser(otherUserId: string): Promise<MessageD
     createdAt: (d.createdAt as Date).toISOString(),
     senderName: userMap[String(d.senderId)] || "Unknown",
   }));
-}
+})
 
-export async function getConversations(): Promise<ConversationData[]> {
+export const getConversations = cache(async function getConversations(): Promise<ConversationData[]> {
   const session = await auth();
   if (!session?.user?.id) return [];
 
@@ -100,6 +105,7 @@ export async function getConversations(): Promise<ConversationData[]> {
     ],
   })
     .sort({ createdAt: -1 })
+    .limit(500)
     .lean();
 
   const lastMessageMap: Record<string, { content: string; createdAt: Date }> = {};
@@ -144,13 +150,13 @@ export async function getConversations(): Promise<ConversationData[]> {
       if (aTime !== bTime) return bTime - aTime;
       return a.name.localeCompare(b.name);
     });
-}
+})
 
-export async function getAdminId(): Promise<string | null> {
+export const getAdminId = cache(async function getAdminId(): Promise<string | null> {
   await connectMongoDB();
   const admin = await User.findOne({ role: "admin" }).select("_id").lean();
   return admin ? String(admin._id) : null;
-}
+})
 
 export async function markMessagesAsRead(senderId: string) {
   const session = await auth();

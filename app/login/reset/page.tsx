@@ -55,7 +55,7 @@ export default async function ResetPasswordPage({
     }
 
     // 4. If valid, render the client-side form to accept the new password
-    return <ResetPasswordForm userId={user._id.toString()} />;
+    return <ResetPasswordForm userId={user._id.toString()} resetToken={params.token} />;
 }
 
 // Extracted the UI into a clean helper component for reuse

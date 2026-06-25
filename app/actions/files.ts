@@ -1,9 +1,11 @@
 "use server";
 
+import { cache } from "react";
 import { revalidatePath } from "next/cache";
 import { put, del } from "@vercel/blob";
 import { auth } from "@/auth";
 import { connectMongoDB } from "@/lib/mongodb";
+import { rateLimitAction } from "@/lib/rate-limiter";
 import FileModel from "@/models/File";
 import NotificationModel from "@/models/Notification";
 import ProjectModel from "@/models/Project";
@@ -11,14 +13,17 @@ import User from "@/models/User";
 import { sendFileUploadEmail } from "@/lib/email";
 import type { FileItem, Notification } from "@/types";
 
-async function getAdminId(): Promise<string | null> {
+const getAdminId = cache(async function getAdminId(): Promise<string | null> {
   const admin = await User.findOne({ role: "admin" }).lean();
   return admin ? String(admin._id) : null;
-}
+})
 
 // ── Upload ────────────────────────────────────────────
 
 export async function uploadFile(formData: FormData) {
+  const limitResult = await rateLimitAction("uploadFile", 10, 60_000).catch(() => null);
+  if (!limitResult) return { error: "Too many requests. Please try again later." };
+
   const session = await auth();
   if (!session?.user?.id) return { error: "Unauthorized" };
 
@@ -28,6 +33,46 @@ export async function uploadFile(formData: FormData) {
   if (!file || !projectId) return { error: "Missing file or projectId" };
   if (file.size === 0) return { error: "File is empty" };
   if (!/^[0-9a-fA-F]{24}$/.test(projectId)) return { error: "Invalid project ID" };
+
+  const MAX_FILE_SIZE = 50 * 1024 * 1024;
+  if (file.size > MAX_FILE_SIZE) return { error: "File size exceeds the 50 MB limit" };
+
+  const ALLOWED_MIME_TYPES = [
+    "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml",
+    "application/pdf",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/plain", "text/csv",
+    "application/zip", "application/x-zip-compressed",
+    "application/x-rar-compressed",
+    "video/mp4", "video/mpeg", "video/quicktime",
+    "audio/mpeg", "audio/wav", "audio/ogg",
+  ];
+
+  const ALLOWED_EXTENSIONS = [
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg",
+    ".pdf",
+    ".doc", ".docx",
+    ".xls", ".xlsx",
+    ".ppt", ".pptx",
+    ".txt", ".csv",
+    ".zip", ".rar",
+    ".mp4", ".mpeg", ".mov",
+    ".mp3", ".wav", ".ogg",
+  ];
+
+  const ext = "." + file.name.split(".").pop()?.toLowerCase();
+  if (!ALLOWED_EXTENSIONS.includes(ext)) {
+    return { error: `File type "${ext}" is not allowed. Accepted types: ${ALLOWED_EXTENSIONS.join(", ")}` };
+  }
+
+  if (!ALLOWED_MIME_TYPES.includes(file.type) && file.type !== "") {
+    return { error: `MIME type "${file.type}" is not allowed` };
+  }
 
   await connectMongoDB();
 
@@ -130,7 +175,7 @@ export async function uploadFile(formData: FormData) {
 
 // ── List files for a project ───────────────────────────
 
-export async function getProjectFiles(projectId: string): Promise<FileItem[]> {
+export const getProjectFiles = cache(async function getProjectFiles(projectId: string): Promise<FileItem[]> {
   const session = await auth();
   if (!session?.user?.id) return [];
 
@@ -140,6 +185,7 @@ export async function getProjectFiles(projectId: string): Promise<FileItem[]> {
 
   const docs = await FileModel.find({ projectId })
     .sort({ createdAt: -1 })
+    .limit(200)
     .lean();
 
   const project = await ProjectModel.findById(projectId).select("title").lean();
@@ -169,11 +215,11 @@ export async function getProjectFiles(projectId: string): Promise<FileItem[]> {
     canDelete: session.user.role === "admin" || String(d.uploadedBy) === session.user.id,
     createdAt: (d.createdAt as Date).toISOString(),
   }));
-}
+})
 
 // ── Client: all files across their projects ────────────
 
-export async function getClientFiles(): Promise<FileItem[]> {
+export const getClientFiles = cache(async function getClientFiles(): Promise<FileItem[]> {
   const session = await auth();
   if (!session?.user?.id) return [];
 
@@ -181,6 +227,7 @@ export async function getClientFiles(): Promise<FileItem[]> {
 
   const projects = await ProjectModel.find({ clientId: session.user.id })
     .select("_id title")
+    .limit(100)
     .lean();
   const projectIds = projects.map((p) => p._id);
   const projectTitles: Record<string, string> = {};
@@ -190,6 +237,7 @@ export async function getClientFiles(): Promise<FileItem[]> {
 
   const docs = await FileModel.find({ projectId: { $in: projectIds } })
     .sort({ createdAt: -1 })
+    .limit(200)
     .lean();
 
   const userIds = [...new Set(docs.map((d) => String(d.uploadedBy)))];
@@ -216,7 +264,7 @@ export async function getClientFiles(): Promise<FileItem[]> {
     canDelete: session.user.role === "admin" || String(d.uploadedBy) === session.user.id,
     createdAt: (d.createdAt as Date).toISOString(),
   }));
-}
+})
 
 // ── Admin: all files grouped by client → project ───────
 
@@ -230,7 +278,7 @@ export interface AdminFileGroup {
   }[];
 }
 
-export async function getAdminFilesGrouped(): Promise<AdminFileGroup[]> {
+export const getAdminFilesGrouped = cache(async function getAdminFilesGrouped(): Promise<AdminFileGroup[]> {
   const session = await auth();
   if (!session?.user?.id) return [];
 
@@ -241,11 +289,14 @@ export async function getAdminFilesGrouped(): Promise<AdminFileGroup[]> {
 
   const projects = await ProjectModel.find({ clientId: { $in: clientIds } })
     .select("title clientId")
+    .sort({ createdAt: -1 })
+    .limit(200)
     .lean();
 
   const projectIds = projects.map((p) => p._id);
   const files = await FileModel.find({ projectId: { $in: projectIds } })
     .sort({ createdAt: -1 })
+    .limit(500)
     .lean();
 
   const userIds = [...new Set(files.map((d) => String(d.uploadedBy)))];
@@ -296,7 +347,7 @@ export async function getAdminFilesGrouped(): Promise<AdminFileGroup[]> {
   }
 
   return result;
-}
+})
 
 // ── Delete a file ──────────────────────────────────────
 
@@ -341,7 +392,7 @@ export async function getFileUrl(fileId: string) {
 
 // ── Notifications ──────────────────────────────────────
 
-export async function getNotifications(): Promise<Notification[]> {
+export const getNotifications = cache(async function getNotifications(): Promise<Notification[]> {
   const session = await auth();
   if (!session?.user?.id) return [];
 
@@ -389,7 +440,7 @@ export async function getNotifications(): Promise<Notification[]> {
     read: (d.read as boolean) || false,
     createdAt: (d.createdAt as Date).toISOString(),
   }));
-}
+})
 
 export async function markNotificationRead(notificationId: string) {
   const session = await auth();
@@ -405,7 +456,7 @@ export async function markNotificationRead(notificationId: string) {
   return { success: true };
 }
 
-export async function getProjectActivity(projectId: string): Promise<Notification[]> {
+export const getProjectActivity = cache(async function getProjectActivity(projectId: string): Promise<Notification[]> {
   const session = await auth();
   if (!session?.user?.id) return [];
 
@@ -436,15 +487,14 @@ export async function getProjectActivity(projectId: string): Promise<Notificatio
     read: (d.read as boolean) || false,
     createdAt: (d.createdAt as Date).toISOString(),
   }));
-}
+})
 
-export async function getUnreadCount(): Promise<number> {
+export const getUnreadCount = cache(async function getUnreadCount(): Promise<number> {
   const session = await auth();
   if (!session?.user?.id) return 0;
 
   await connectMongoDB();
 
   return NotificationModel.countDocuments({ toUser: session.user.id, read: false });
-}
-
+})
 

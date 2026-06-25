@@ -1,6 +1,3 @@
-"use client";
-
-import { useTranslation } from "@/components/LanguageProvider";
 import {
   Card,
   CardHeader,
@@ -16,41 +13,19 @@ import {
   LayoutDashboard,
 } from "lucide-react";
 
-export default function Features() {
-  const { t } = useTranslation();
-  const features = [
-    {
-      icon: GitBranch,
-      title: t("landing.featureProjectTracking"),
-      description: t("landing.featureProjectTrackingDesc"),
-    },
-    {
-      icon: FolderOpen,
-      title: t("landing.featureFileSharing"),
-      description: t("landing.featureFileSharingDesc"),
-    },
-    {
-      icon: MessageSquare,
-      title: t("landing.featureTeamCommunication"),
-      description: t("landing.featureTeamCommunicationDesc"),
-    },
-    {
-      icon: Receipt,
-      title: t("landing.featureInvoiceManagement"),
-      description: t("landing.featureInvoiceManagementDesc"),
-    },
-    {
-      icon: RefreshCw,
-      title: t("landing.featureProgressUpdates"),
-      description: t("landing.featureProgressUpdatesDesc"),
-    },
-    {
-      icon: LayoutDashboard,
-      title: t("landing.featureClientDashboard"),
-      description: t("landing.featureClientDashboardDesc"),
-    },
-  ];
+type Feature = {
+  icon: typeof GitBranch;
+  title: string;
+  description: string;
+};
 
+type Props = {
+  title: string;
+  description: string;
+  features: Feature[];
+};
+
+export default function Features({ title, description, features }: Props) {
   return (
     <section
       id="features"
@@ -61,10 +36,10 @@ export default function Features() {
           className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50"
           style={{ fontFamily: "var(--font-plus-jakarta-sans)" }}
         >
-          {t("landing.featuresTitle")}
+          {title}
         </h2>
         <p className="text-base text-slate-500 dark:text-slate-400 mt-2">
-          {t("landing.featuresDesc")}
+          {description}
         </p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">

@@ -1,8 +1,10 @@
 "use server";
 
+import { cache } from "react";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/auth";
 import { connectMongoDB } from "@/lib/mongodb";
+import { rateLimitAction } from "@/lib/rate-limiter";
 import InvoiceModel from "@/models/Invoice";
 import User from "@/models/User";
 import NotificationModel from "@/models/Notification";
@@ -43,7 +45,7 @@ export interface ClientRevenue {
   invoiceCount: number;
 }
 
-export async function getClientInvoices(): Promise<ClientInvoiceData[]> {
+export const getClientInvoices = cache(async function getClientInvoices(): Promise<ClientInvoiceData[]> {
   const session = await auth();
   if (!session?.user?.id) return [];
 
@@ -51,6 +53,7 @@ export async function getClientInvoices(): Promise<ClientInvoiceData[]> {
 
   const docs = await InvoiceModel.find({ clientId: session.user.id })
     .sort({ createdAt: -1 })
+    .limit(200)
     .lean();
 
   return docs.map((d) => ({
@@ -64,9 +67,9 @@ export async function getClientInvoices(): Promise<ClientInvoiceData[]> {
     paidAt: d.paidAt ? (d.paidAt as Date).toISOString() : null,
     createdAt: (d.createdAt as Date).toISOString(),
   }));
-}
+})
 
-export async function getClientInvoiceStats(): Promise<InvoiceStats> {
+export const getClientInvoiceStats = cache(async function getClientInvoiceStats(): Promise<InvoiceStats> {
   const session = await auth();
   if (!session?.user?.id) {
     return { totalPaid: 0, totalPending: 0, totalOverdue: 0, paidCount: 0, pendingCount: 0, overdueCount: 0, nextDue: null, nextDueId: null };
@@ -103,16 +106,17 @@ export async function getClientInvoiceStats(): Promise<InvoiceStats> {
     nextDue: nextDueDoc ? (nextDueDoc.dueDate as Date).toISOString() : null,
     nextDueId: nextDueDoc ? String(nextDueDoc._id) : null,
   };
-}
+})
 
-export async function getAdminInvoices(): Promise<AdminInvoiceData[]> {
+export const getAdminInvoices = cache(async function getAdminInvoices(): Promise<AdminInvoiceData[]> {
   const session = await auth();
-  if (!session?.user?.id) return [];
+  if (!session?.user?.id || session.user.role !== "admin") return [];
 
   await connectMongoDB();
 
   const docs = await InvoiceModel.find()
     .sort({ createdAt: -1 })
+    .limit(500)
     .lean();
 
   const clientIds = [...new Set(docs.map((d) => String(d.clientId)))];
@@ -133,11 +137,11 @@ export async function getAdminInvoices(): Promise<AdminInvoiceData[]> {
     paidAt: d.paidAt ? (d.paidAt as Date).toISOString() : null,
     createdAt: (d.createdAt as Date).toISOString(),
   }));
-}
+})
 
-export async function getAdminInvoiceStats() {
+export const getAdminInvoiceStats = cache(async function getAdminInvoiceStats() {
   const session = await auth();
-  if (!session?.user?.id) {
+  if (!session?.user?.id || session.user.role !== "admin") {
     return { totalCollected: 0, totalPending: 0, totalOverdue: 0, collectedCount: 0, pendingCount: 0, overdueCount: 0 };
   }
 
@@ -166,11 +170,15 @@ export async function getAdminInvoiceStats() {
     pendingCount: pendingAgg[0]?.count ?? 0,
     overdueCount: overdueAgg[0]?.count ?? 0,
   };
-}
+})
 
 export async function createInvoice(formData: FormData) {
+  const limitResult = await rateLimitAction("createInvoice", 10, 60_000).catch(() => null);
+  if (!limitResult) return { error: "Too many requests. Please try again later." };
+
   const session = await auth();
   if (!session?.user?.id) return { error: "Unauthorized" };
+  if (session.user.role !== "admin") return { error: "Forbidden" };
 
   const clientId = formData.get("clientId") as string | null;
   const title = formData.get("title") as string | null;
@@ -269,6 +277,7 @@ export async function payInvoice(invoiceId: string) {
 export async function updateInvoice(formData: FormData) {
   const session = await auth();
   if (!session?.user?.id) return { error: "Unauthorized" };
+  if (session.user.role !== "admin") return { error: "Forbidden" };
 
   const invoiceId = formData.get("invoiceId") as string | null;
   const title = formData.get("title") as string | null;
@@ -310,6 +319,7 @@ export async function updateInvoice(formData: FormData) {
 export async function deleteInvoice(invoiceId: string) {
   const session = await auth();
   if (!session?.user?.id) return { error: "Unauthorized" };
+  if (session.user.role !== "admin") return { error: "Forbidden" };
 
   await connectMongoDB();
 
@@ -326,6 +336,7 @@ export async function deleteInvoice(invoiceId: string) {
 export async function markInvoiceAsPaid(invoiceId: string) {
   const session = await auth();
   if (!session?.user?.id) return { error: "Unauthorized" };
+  if (session.user.role !== "admin") return { error: "Forbidden" };
 
   await connectMongoDB();
 
@@ -355,7 +366,7 @@ export async function markInvoiceAsPaid(invoiceId: string) {
   return { success: true };
 }
 
-export async function getRevenueByClient(): Promise<ClientRevenue[]> {
+export const getRevenueByClient = cache(async function getRevenueByClient(): Promise<ClientRevenue[]> {
   const session = await auth();
   if (!session?.user?.id) return [];
 
@@ -378,7 +389,7 @@ export async function getRevenueByClient(): Promise<ClientRevenue[]> {
     revenue: r.revenue,
     invoiceCount: r.invoiceCount,
   }));
-}
+})
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -387,7 +398,7 @@ export interface MonthlyRevenueEntry {
   value: number;
 }
 
-export async function getMonthlyRevenue(): Promise<MonthlyRevenueEntry[]> {
+export const getMonthlyRevenue = cache(async function getMonthlyRevenue(): Promise<MonthlyRevenueEntry[]> {
   const session = await auth();
   if (!session?.user?.id) return MONTHS.map((m) => ({ month: m, value: 0 }));
 
@@ -408,9 +419,9 @@ export async function getMonthlyRevenue(): Promise<MonthlyRevenueEntry[]> {
     month,
     value: revenueMap[i + 1] || 0,
   }));
-}
+})
 
-export async function getProjectInvoices(projectId: string): Promise<ClientInvoiceData[]> {
+export const getProjectInvoices = cache(async function getProjectInvoices(projectId: string): Promise<ClientInvoiceData[]> {
   const session = await auth();
   if (!session?.user?.id) return [];
 
@@ -433,9 +444,9 @@ export async function getProjectInvoices(projectId: string): Promise<ClientInvoi
     paidAt: d.paidAt ? (d.paidAt as Date).toISOString() : null,
     createdAt: (d.createdAt as Date).toISOString(),
   }));
-}
+})
 
-export async function areProjectInvoicesPaid(projectId: string): Promise<boolean> {
+export const areProjectInvoicesPaid = cache(async function areProjectInvoicesPaid(projectId: string): Promise<boolean> {
   const session = await auth();
   if (!session?.user?.id) return true;
 
@@ -450,4 +461,4 @@ export async function areProjectInvoicesPaid(projectId: string): Promise<boolean
   });
 
   return unpaid === 0;
-}
+})

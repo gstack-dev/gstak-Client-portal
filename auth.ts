@@ -2,8 +2,17 @@ import NextAuth from "next-auth"
 import Google from "next-auth/providers/google"
 import Credentials from "next-auth/providers/credentials"
 import bcrypt from "bcryptjs"
-import { connectMongoDB } from "@/lib/mongodb" // Import your DB client
+import { connectMongoDB } from "@/lib/mongodb"
+import { rateLimit } from "@/lib/rate-limiter"
 import User from "@/models/User"
+
+function getIPFromRequest(req: Request): string {
+  return (
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    req.headers.get("x-real-ip") ||
+    "unknown"
+  );
+}
 
 export const { handlers, signIn, signOut, auth } = NextAuth({
     providers: [
@@ -15,9 +24,17 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
             password: { label: "Password", type: "password" },
             rememberMe: { label: "Remember Me", type: "text" },
         },
-        async authorize(credentials) {
+        async authorize(credentials, request) {
             if (!credentials?.email || !credentials?.password) {
                 return null;
+            }
+
+            if (request) {
+              const ip = getIPFromRequest(request);
+              const result = await rateLimit(`login:${ip}`, 10, 60_000);
+              if (!result.allowed) {
+                return null;
+              }
             }
 
             await connectMongoDB();

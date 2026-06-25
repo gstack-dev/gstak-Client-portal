@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { CheckCircle, Clock, Calendar } from "lucide-react";
@@ -11,24 +12,49 @@ export const metadata: Metadata = {
   openGraph: { title: "Invoices", description: "Manage your billing and payment history." },
 };
 
+function t(dict: any, key: string, params?: Record<string, string | number>) {
+  const val = key.split(".").reduce((acc, part) => acc?.[part], dict as any);
+  if (typeof val !== "string") return key;
+  return params ? Object.entries(params).reduce((s, [k, v]) => s.replace(`{${k}}`, String(v)), val) : val;
+}
+
+function InvoicesSkeleton() {
+  return (
+    <div className="max-w-[1280px] mx-auto animate-pulse">
+      <div className="h-10 w-48 bg-slate-200 dark:bg-slate-700 rounded mb-2" />
+      <div className="h-5 w-72 bg-slate-100 dark:bg-slate-800 rounded mb-8" />
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-16">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-40 bg-white dark:bg-[#0F172A] rounded-2xl border border-slate-200 dark:border-slate-800 p-6" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default async function InvoicesPage() {
+  return (
+    <Suspense fallback={<InvoicesSkeleton />}>
+      <InvoicesContent />
+    </Suspense>
+  );
+}
+
+async function InvoicesContent() {
   const cookieStore = await cookies();
   const localeRaw = cookieStore.get("NEXT_LOCALE")?.value ?? defaultLocale;
   const locale: Locale = isValidLocale(localeRaw) ? localeRaw : defaultLocale;
   const dict = await getDictionary(locale);
-  const t = (key: string, params?: Record<string, string | number>) => {
-    const val = key.split(".").reduce((acc, part) => acc?.[part], dict as any);
-    if (typeof val !== "string") return key;
-    return params ? Object.entries(params).reduce((s, [k, v]) => s.replace(`{${k}}`, String(v)), val) : val;
-  };
 
-  const invoices = await getClientInvoices();
-  const stats = await getClientInvoiceStats();
+  const [invoices, stats] = await Promise.all([
+    getClientInvoices(),
+    getClientInvoiceStats(),
+  ]);
 
   const summaryCards = [
-    { icon: "CheckCircle", label: t("invoices.totalPaid"), value: `$${stats.totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, sub: stats.paidCount === 1 ? t("invoices.acrossInvoices", { count: stats.paidCount }) : t("invoices.acrossInvoicesPlural", { count: stats.paidCount }) },
-    { icon: "Clock", label: t("invoices.totalPending"), value: `$${stats.totalPending.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, sub: stats.pendingCount === 1 ? t("invoices.awaitingPayment", { count: stats.pendingCount }) : t("invoices.awaitingPaymentPlural", { count: stats.pendingCount }), accent: true },
-    { icon: "Calendar", label: t("invoices.nextDueDate"), value: stats.nextDue ? new Date(stats.nextDue).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : t("invoices.noPending"), sub: stats.nextDueId ? `Invoice #${stats.nextDueId.slice(-6).toUpperCase()}` : t("invoices.allPaid") },
+    { icon: "CheckCircle", label: t(dict, "invoices.totalPaid"), value: `$${stats.totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, sub: stats.paidCount === 1 ? t(dict, "invoices.acrossInvoices", { count: stats.paidCount }) : t(dict, "invoices.acrossInvoicesPlural", { count: stats.paidCount }) },
+    { icon: "Clock", label: t(dict, "invoices.totalPending"), value: `$${stats.totalPending.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, sub: stats.pendingCount === 1 ? t(dict, "invoices.awaitingPayment", { count: stats.pendingCount }) : t(dict, "invoices.awaitingPaymentPlural", { count: stats.pendingCount }), accent: true },
+    { icon: "Calendar", label: t(dict, "invoices.nextDueDate"), value: stats.nextDue ? new Date(stats.nextDue).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : t(dict, "invoices.noPending"), sub: stats.nextDueId ? `Invoice #${stats.nextDueId.slice(-6).toUpperCase()}` : t(dict, "invoices.allPaid") },
   ];
 
   return (
@@ -39,10 +65,10 @@ export default async function InvoicesPage() {
             className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50"
             style={{ fontFamily: "var(--font-plus-jakarta-sans)" }}
           >
-            {t("invoices.title")}
+            {t(dict, "invoices.title")}
           </h1>
           <p className="text-base text-slate-500 dark:text-slate-400 mt-1">
-            {t("invoices.subtitleClient")}
+            {t(dict, "invoices.subtitleClient")}
           </p>
         </div>
       </div>
@@ -79,13 +105,13 @@ export default async function InvoicesPage() {
           className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-slate-50"
           style={{ fontFamily: "var(--font-plus-jakarta-sans)" }}
         >
-          {t("invoices.recentInvoices")}
+          {t(dict, "invoices.recentInvoices")}
         </h2>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {invoices.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400 col-span-full">{t("invoices.noInvoices")}</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400 col-span-full">{t(dict, "invoices.noInvoices")}</p>
         ) : (
           invoices.map((inv) => {
             const statusLabel = inv.status === "paid" ? "Paid" : inv.status === "overdue" ? "Overdue" : inv.status === "cancelled" ? "Cancelled" : "Pending";

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -24,43 +25,66 @@ function getStatusColor(status: string) {
   }
 }
 
+function t(dict: any, key: string, params?: Record<string, string | number>) {
+  const val = key.split(".").reduce((acc, part) => acc?.[part], dict as any);
+  if (typeof val !== "string") return key;
+  return params ? Object.entries(params).reduce((s, [k, v]) => s.replace(`{${k}}`, String(v)), val) : val;
+}
+
+function ProjectsSkeleton() {
+  return (
+    <div className="max-w-[1280px] mx-auto animate-pulse">
+      <div className="h-10 w-48 bg-slate-200 dark:bg-slate-700 rounded mb-2" />
+      <div className="h-5 w-64 bg-slate-100 dark:bg-slate-800 rounded mb-8" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-40 bg-white dark:bg-[#0F172A] rounded-xl border border-slate-200 dark:border-slate-800 p-5" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default async function ProjectsPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
   if (session?.user?.role === "admin") redirect("/admin");
 
-  const projects = await getUserProjects();
+  return (
+    <Suspense fallback={<ProjectsSkeleton />}>
+      <ProjectsContent />
+    </Suspense>
+  );
+}
 
+async function ProjectsContent() {
   const cookieStore = await cookies();
   const localeRaw = cookieStore.get("NEXT_LOCALE")?.value ?? defaultLocale;
   const locale: Locale = isValidLocale(localeRaw) ? localeRaw : defaultLocale;
   const dict = await getDictionary(locale);
-  const t = (key: string, params?: Record<string, string | number>) => {
-    const val = key.split(".").reduce((acc, part) => acc?.[part], dict as any);
-    if (typeof val !== "string") return key;
-    return params ? Object.entries(params).reduce((s, [k, v]) => s.replace(`{${k}}`, String(v)), val) : val;
-  };
+
+  const projects = await getUserProjects();
 
   const statusLabels: Record<string, string> = {
-    planning: t("status.planning"),
-    in_progress: t("status.inProgress"),
-    review: t("status.review"),
-    completed: t("status.completed"),
-    on_hold: t("status.onHold"),
-    cancelled: t("status.cancelled"),
+    planning: t(dict, "status.planning"),
+    in_progress: t(dict, "status.inProgress"),
+    review: t(dict, "status.review"),
+    completed: t(dict, "status.completed"),
+    on_hold: t(dict, "status.onHold"),
+    cancelled: t(dict, "status.cancelled"),
   };
 
   return (
     <div className="max-w-[1280px] mx-auto">
       <header className="mb-8">
         <h1 className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50" style={{ fontFamily: "var(--font-plus-jakarta-sans)" }}>
-          {t("projects.title")}
+          {t(dict, "projects.title")}
         </h1>
-        <p className="text-base text-slate-500 dark:text-slate-400 mt-1">{t("projects.subtitle")}</p>
+        <p className="text-base text-slate-500 dark:text-slate-400 mt-1">{t(dict, "projects.subtitle")}</p>
       </header>
 
       {projects.length === 0 ? (
-        <p className="text-slate-500 dark:text-slate-400">{t("projects.noProjects")}</p>
+        <p className="text-slate-500 dark:text-slate-400">{t(dict, "projects.noProjects")}</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {projects.map((project) => (
@@ -86,7 +110,7 @@ export default async function ProjectsPage() {
               </div>
               {project.deadline && (
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                  {t("projects.due", { date: new Date(project.deadline + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) })}
+                  {t(dict, "projects.due", { date: new Date(project.deadline + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) })}
                 </p>
               )}
             </Link>

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import Link from "next/link";
 import { updatePassword } from "@/app/actions/updatePassword";
 
-export default function ResetPasswordForm({ userId }: { userId: string }) {
+export default function ResetPasswordForm({ userId, resetToken }: { userId: string; resetToken: string }) {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isSuccess, setIsSuccess] = useState(false);
     const [error, setError] = useState("");
@@ -34,7 +34,7 @@ export default function ResetPasswordForm({ userId }: { userId: string }) {
         }
 
         // Call the server action we just created
-        const result = await updatePassword(userId, password);
+        const result = await updatePassword(userId, password, resetToken);
 
         if (result.error) {
             setError(result.error);

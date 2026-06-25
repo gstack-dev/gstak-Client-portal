@@ -27,5 +27,7 @@ const userSchema = new mongoose.Schema({
     phone: { type: String, required: false },
 }, { timestamps: true });
 
+userSchema.index({ email: 1 }, { unique: true });
+userSchema.index({ role: 1 });
 
 export default mongoose.models.User || mongoose.model("User", userSchema);

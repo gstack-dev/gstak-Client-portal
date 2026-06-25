@@ -49,12 +49,36 @@ export default function DashboardMessagesPage() {
 
   useEffect(() => {
     if (!adminId) return;
-    const interval = setInterval(async () => {
-      const msgs = await getMessagesWithUser(adminId);
-      setMessages(msgs);
-      markMessagesAsRead(adminId);
-    }, 1000);
-    return () => clearInterval(interval);
+
+    let pollTimer: ReturnType<typeof setTimeout>;
+
+    const poll = async () => {
+      if (document.hidden) {
+        pollTimer = setTimeout(poll, 1000);
+        return;
+      }
+      try {
+        const msgs = await getMessagesWithUser(adminId);
+        setMessages(msgs);
+        markMessagesAsRead(adminId);
+      } catch {}
+      pollTimer = setTimeout(poll, 10000);
+    };
+
+    const onVisible = () => {
+      if (!document.hidden) {
+        clearTimeout(pollTimer);
+        poll();
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+    pollTimer = setTimeout(poll, 10000);
+
+    return () => {
+      clearTimeout(pollTimer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [adminId]);
 
   useEffect(() => {

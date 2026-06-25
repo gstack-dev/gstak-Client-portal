@@ -1,23 +1,22 @@
-"use client";
+type Step = {
+  number: string;
+  title: string;
+  description: string;
+};
 
-import { useTranslation } from "@/components/LanguageProvider";
+type Props = {
+  title: string;
+  steps: Step[];
+};
 
-export default function Process() {
-  const { t } = useTranslation();
-  const steps = [
-    { number: "01", title: t("landing.stepDiscoveryCall"), description: t("landing.stepDiscoveryCallDesc") },
-    { number: "02", title: t("landing.stepDesignPlanning"), description: t("landing.stepDesignPlanningDesc") },
-    { number: "03", title: t("landing.stepDevelopment"), description: t("landing.stepDevelopmentDesc") },
-    { number: "04", title: t("landing.stepDelivery"), description: t("landing.stepDeliveryDesc") },
-  ];
-
+export default function Process({ title, steps }: Props) {
   return (
     <section className="px-4 md:px-12 max-w-[1280px] mx-auto py-16">
       <h2
         className="text-3xl font-semibold tracking-tight text-slate-900 dark:text-slate-50 mb-8 text-center"
         style={{ fontFamily: "var(--font-plus-jakarta-sans)" }}
       >
-        {t("landing.processTitle")}
+        {title}
       </h2>
       <div className="flex flex-col md:flex-row gap-6 justify-between relative">
         <div className="hidden md:block absolute top-6 left-12 right-12 h-[2px] bg-slate-200 dark:bg-slate-800 -z-10" />

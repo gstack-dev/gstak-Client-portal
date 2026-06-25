@@ -111,7 +111,7 @@ function LoginForm() {
                 
                 {urlError === "AccessDenied" && (
                     <div className="p-3 bg-error-container text-on-error-container text-sm rounded-md border border-red-200">
-                        You do not have permission to access this portal. Please contact the administrator.
+                        {t("auth.accessDenied")}
                     </div>
                 )}
 

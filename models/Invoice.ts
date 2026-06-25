@@ -15,4 +15,8 @@ const invoiceSchema = new mongoose.Schema({
     paidAt: { type: Date },
 }, { timestamps: true });
 
+invoiceSchema.index({ clientId: 1, status: 1 });
+invoiceSchema.index({ status: 1 });
+invoiceSchema.index({ dueDate: 1 });
+
 export default mongoose.models.Invoice || mongoose.model("Invoice", invoiceSchema);

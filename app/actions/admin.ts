@@ -1,5 +1,6 @@
 "use server";
 
+import { cache } from "react";
 import { auth } from "@/auth";
 import { connectMongoDB } from "@/lib/mongodb";
 import User from "@/models/User";
@@ -9,9 +10,9 @@ import type { ProjectStatusSegment, MonthlyStat, TopClient } from "@/types";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-export async function getAdminMetrics() {
+export const getAdminMetrics = cache(async function getAdminMetrics() {
   const session = await auth();
-  if (!session?.user?.id) {
+  if (!session?.user?.id || session.user.role !== "admin") {
     return { totalClients: 0, activeProjects: 0, projectStatusSegments: [] as ProjectStatusSegment[] };
   }
 
@@ -50,11 +51,11 @@ export async function getAdminMetrics() {
       ];
 
   return { totalClients, activeProjects, projectStatusSegments };
-}
+})
 
-export async function getAdminAnalytics() {
+export const getAdminAnalytics = cache(async function getAdminAnalytics() {
   const session = await auth();
-  if (!session?.user?.id) {
+  if (!session?.user?.id || session.user.role !== "admin") {
     return { totalUsers: 0, monthlyStats: [] as MonthlyStat[], topClients: [] as TopClient[] };
   }
 
@@ -142,4 +143,4 @@ export async function getAdminAnalytics() {
   });
 
   return { totalUsers, monthlyStats, topClients };
-}
+})

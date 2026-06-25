@@ -9,4 +9,7 @@ const loginSessionSchema = new mongoose.Schema({
   lastActiveAt: { type: Date, default: Date.now },
 }, { timestamps: true });
 
+loginSessionSchema.index({ userId: 1, lastActiveAt: -1 });
+loginSessionSchema.index({ userId: 1, loggedInAt: -1 });
+
 export default mongoose.models.LoginSession || mongoose.model("LoginSession", loginSessionSchema);
